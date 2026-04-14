@@ -9,3 +9,13 @@ pillow
 pdf2image
 pymongo 
 python-dotenv
+
+sqlalchemy
+psycopg2-binary
+
+python-jose
+passlib[bcrypt]
+
+alembic
+pytest
+httpx
