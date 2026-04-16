@@ -1,4 +1,6 @@
-from fastapi import APIRouter, UploadFile, File, Depends
+# app/api/routes/peb.py
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+from fastapi.responses import FileResponse # Tambah ini
 from sqlalchemy.orm import Session
 from typing import List
 import uuid
@@ -111,8 +113,8 @@ async def upload_peb(
             # =============================
             # MAPPING DATA
             # =============================
-            nilai_fob = to_float(header.get("nilai_fob"))
-            nilai_tukar = to_float(header.get("nilai_tukar"))
+            nilai_fob = to_float(header.get("nilai_fob"))/100
+            nilai_tukar = to_float(header.get("nilai_tukar"))/100
 
             peb = PEB(
                 buyer_name=header.get("nama_pembeli"),
@@ -190,6 +192,32 @@ def get_peb(
         message="Success"
     )
 
+# =========================================
+# 🔹 VIEW / DOWNLOAD PDF
+# =========================================
+@router.get("/{peb_id}/view")
+async def view_peb_pdf(
+    peb_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 1. Cari data di DB
+    peb = db.query(PEB).filter(PEB.id == peb_id).first()
+
+    if not peb:
+        return error_response("Data PEB tidak ditemukan", 404)
+
+    # 2. Cek apakah file fisik ada di storage
+    if not peb.file_path or not os.path.exists(peb.file_path):
+        return error_response("File fisik tidak ditemukan di server", 404)
+
+    # 3. Return FileResponse
+    # media_type="application/pdf" memaksa browser membuka viewer PDF bawaan
+    return FileResponse(
+        path=peb.file_path,
+        filename=peb.file_name,
+        media_type="application/pdf"
+    )
 
 # =========================================
 # 🔹 UPDATE PEB
