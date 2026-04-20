@@ -19,3 +19,6 @@ class PEBItem(BaseModel):
 class PEBResponse(BaseModel):
     header: PEBHeader
     items: List[PEBItem]
+
+class BulkDeleteRequest(BaseModel):
+    ids: List[int]
