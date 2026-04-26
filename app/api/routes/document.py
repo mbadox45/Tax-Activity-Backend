@@ -97,3 +97,56 @@ def get_documents(
         data=result,
         message="Load data berhasil"
     )
+
+
+def delete_recursive(db: Session, document: Document):
+    """
+    Menghapus record di database dan file fisik di storage secara permanen.
+    """
+    if document.is_folder:
+        # 1. Cari semua isi di dalam folder ini (sub-folder & file)
+        children = db.query(Document).filter(Document.parent_id == document.id).all()
+        for child in children:
+            # Panggil fungsi ini secara rekursif untuk menghapus isi di dalamnya
+            delete_recursive(db, child)
+    else:
+        # 2. Jika ini adalah FILE, hapus file fisiknya dari storage
+        if document.file_path:
+            # Cek apakah path file-nya ada di server
+            if os.path.exists(document.file_path):
+                try:
+                    os.remove(document.file_path)
+                except Exception as e:
+                    # Log error jika gagal hapus file fisik, tapi tetap lanjut hapus record DB
+                    print(f"Gagal menghapus file fisik: {document.file_path}. Error: {e}")
+
+    # 3. Hapus record dari database
+    db.delete(document)
+
+# 🔹 DELETE ROUTE
+@router.delete("/{document_id}")
+def delete_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.user_id == current_user.id
+    ).first()
+
+    if not document:
+        return error_response(message="Data tidak ditemukan", code=404)
+
+    try:
+        # Eksekusi penghapusan rekursif (File fisik + Database)
+        delete_recursive(db, document)
+        db.commit()
+        
+        return success_response(
+            data=None,
+            message="Data dan file fisik berhasil dihapus permanen"
+        )
+    except Exception as e:
+        db.rollback()
+        return error_response(message=f"Gagal menghapus: {str(e)}", code=500)
