@@ -1,17 +1,72 @@
 # app/api/routes/document.py
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import os, uuid
+import mimetypes
 
 from app.db.session import get_db
 from app.models.document_model import Document
-from app.schemas.document_schema import DocumentCreate, DocumentResponse
+from app.schemas.document_schema import DocumentCreate, DocumentResponse, DocumentMove, BulkDeleteRequest
 from app.api.deps import get_current_user
 from app.core.response import success_response, error_response
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 UPLOAD_DIR = "uploads/documents"
+
+@router.get("/{document_id}/view")
+async def view_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    # 1. Cari dokumen di database
+    document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.user_id == current_user.id
+    ).first()
+
+    if not document or document.is_folder:
+        return error_response(message="File tidak ditemukan", code=404)
+
+    file_path = document.file_path
+    if not os.path.exists(file_path):
+        return error_response(message="File fisik tidak ditemukan di server", code=404)
+
+    # 2. Identifikasi tipe file berdasarkan ekstensi atau content
+    mime_type, _ = mimetypes.guess_type(file_path)
+    extension = document.file_type.lower()
+
+    # --- LOGIKA KONVERSI (Word/Text ke PDF) ---
+    if extension in ['doc', 'docx', 'txt', 'rtf']:
+        
+        if extension == 'txt':
+            return FileResponse(file_path, media_type="text/plain", filename=document.name)
+        
+        return FileResponse(file_path, media_type="application/msword", filename=document.name)
+
+    # --- LOGIKA IMAGE ---
+    if extension in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+        return FileResponse(file_path, media_type=mime_type or "image/jpeg")
+
+    # --- LOGIKA PDF ---
+    if extension == 'pdf':
+        return FileResponse(file_path, media_type="application/pdf")
+
+    # --- LOGIKA AUDIO & VIDEO ---
+    if extension in ['mp4', 'webm', 'ogg', 'mov']:
+        return FileResponse(file_path, media_type="video/mp4")
+    
+    if extension in ['mp3', 'wav', 'flac']:
+        return FileResponse(file_path, media_type="audio/mpeg")
+
+    # Default: Kirim file apa adanya (inline)
+    return FileResponse(
+        file_path, 
+        media_type=mime_type or "application/octet-stream",
+        filename=document.name
+    )
 
 # 🔹 CREATE FOLDER (Perbaikan)
 @router.post("/folder")
@@ -101,7 +156,7 @@ async def upload_document(
         db.rollback()
         return error_response(message=f"Gagal menyimpan data ke database: {str(e)}", code=500)
 
-        
+
 # 🔹 GET DOCUMENTS (LISTING)
 @router.get("/") # Hapus response_model=List[DocumentResponse]
 def get_documents(
@@ -174,3 +229,88 @@ def delete_document(
     except Exception as e:
         db.rollback()
         return error_response(message=f"Gagal menghapus: {str(e)}", code=500)
+
+# 🔹 BULK DELETE DOCUMENTS/FOLDERS
+@router.post("/bulk-delete") # Menggunakan POST karena membawa body list ID
+def bulk_delete_documents(
+    payload: BulkDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    # 1. Cari semua dokumen yang dimiliki user berdasarkan list ID yang dikirim
+    documents = db.query(Document).filter(
+        Document.id.in_(payload.document_ids),
+        Document.user_id == current_user.id
+    ).all()
+
+    if not documents:
+        return error_response(message="Tidak ada dokumen yang ditemukan untuk dihapus", code=404)
+
+    try:
+        count = 0
+        for doc in documents:
+            # Menggunakan fungsi rekursif yang sudah kita buat sebelumnya
+            # Ini memastikan file fisik terhapus dan sub-folder ikut bersih
+            delete_recursive(db, doc)
+            count += 1
+        
+        db.commit()
+        
+        return success_response(
+            data=None,
+            message=f"{count} item berhasil dihapus secara permanen"
+        )
+    except Exception as e:
+        db.rollback()
+        return error_response(message=f"Gagal melakukan penghapusan bulk: {str(e)}", code=500)
+
+
+@router.put("/{document_id}/move")
+def move_document(
+    document_id: int,
+    payload: DocumentMove,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    # 1. Cari dokumen/folder yang ingin dipindahkan
+    document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.user_id == current_user.id
+    ).first()
+
+    if not document:
+        return error_response(message="Dokumen tidak ditemukan", code=404)
+
+    # 2. Tangani jika pindah ke Root (parent_id = 0 atau None)
+    target_parent_id = None if payload.parent_id == 0 else payload.parent_id
+
+    # 3. Validasi folder tujuan (jika bukan root)
+    if target_parent_id:
+        target_folder = db.query(Document).filter(
+            Document.id == target_parent_id,
+            Document.user_id == current_user.id
+        ).first()
+
+        if not target_folder:
+            return error_response(message="Folder tujuan tidak ditemukan", code=404)
+        
+        if not target_folder.is_folder:
+            return error_response(message="Target harus berupa folder, bukan file", code=400)
+
+        # 4. Validasi rekursif: Jangan biarkan folder pindah ke dalam dirinya sendiri atau sub-foldernya
+        if document.is_folder and target_parent_id == document.id:
+            return error_response(message="Tidak dapat memindahkan folder ke dalam dirinya sendiri", code=400)
+
+    # 5. Update parent_id
+    document.parent_id = target_parent_id
+    
+    try:
+        db.commit()
+        db.refresh(document)
+        return success_response(
+            data=document,
+            message=f"{'Folder' if document.is_folder else 'File'} berhasil dipindahkan"
+        )
+    except Exception as e:
+        db.rollback()
+        return error_response(message=f"Gagal memindahkan: {str(e)}", code=500)

@@ -19,3 +19,8 @@ passlib[bcrypt]
 alembic
 pytest
 httpx
+
+python-magic
+fpdf2
+mammoth
+weasyprint

@@ -32,3 +32,9 @@ class DocumentResponse(DocumentBase):
 
     class Config:
         from_attributes = True
+
+class DocumentMove(BaseModel):
+    parent_id: Optional[int] = None
+
+class BulkDeleteRequest(BaseModel):
+    document_ids: List[int]
