@@ -14,7 +14,7 @@ router = APIRouter(prefix="/documents", tags=["Documents"])
 UPLOAD_DIR = "uploads/documents"
 
 # 🔹 CREATE FOLDER (Perbaikan)
-@router.post("/folder", response_model=DocumentResponse)
+@router.post("/folder")
 def create_folder(
     data: DocumentCreate,
     db: Session = Depends(get_db),
@@ -44,40 +44,64 @@ def create_folder(
         message="Folder berhasil ditambahkan"
     )
 
-# 🔹 UPLOAD FILE
-@router.post("/upload", response_model=DocumentResponse)
+# 🔹 UPLOAD FILE (Multiple Support)
+@router.post("/upload") 
 async def upload_document(
-    file: UploadFile = File(...),
+    files: List[UploadFile] = File(...), # Gunakan List dan ubah nama variabel jadi jamak
     parent_id: Optional[int] = Form(None),
     is_shared: bool = Form(False),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    # Logika simpan file fisik
-    file_ext = file.filename.split(".")[-1]
-    file_name = f"{uuid.uuid4()}_{file.filename}"
-    file_path = os.path.join(UPLOAD_DIR, file_name)
-    
+    # Pastikan folder penyimpanan ada
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    with open(file_path, "wb") as f:
+    
+    # Handle parent_id 0 menjadi None
+    actual_parent_id = None if parent_id == 0 else parent_id
+    
+    uploaded_records = []
+
+    for file in files:
+        # 1. Logika simpan file fisik
+        file_ext = file.filename.split(".")[-1] if "." in file.filename else ""
+        file_name = f"{uuid.uuid4()}_{file.filename}"
+        file_path = os.path.join(UPLOAD_DIR, file_name)
+        
+        # Baca konten file
         content = await file.read()
-        f.write(content)
+        
+        with open(file_path, "wb") as f:
+            f.write(content)
 
-    new_file = Document(
-        name=file.filename,
-        is_folder=False,
-        is_shared=is_shared,
-        file_path=file_path,
-        file_type=file_ext,
-        file_size=len(content),
-        parent_id=parent_id,
-        user_id=current_user.id
-    )
-    db.add(new_file)
-    db.commit()
-    db.refresh(new_file)
-    return new_file
+        # 2. Buat record database
+        new_file = Document(
+            name=file.filename,
+            is_folder=False,
+            is_shared=is_shared,
+            file_path=file_path,
+            file_type=file_ext,
+            file_size=len(content),
+            parent_id=actual_parent_id,
+            user_id=current_user.id
+        )
+        db.add(new_file)
+        uploaded_records.append(new_file)
 
+    # 3. Commit semua sekaligus
+    try:
+        db.commit()
+        for record in uploaded_records:
+            db.refresh(record)
+            
+        return success_response(
+            data=uploaded_records,
+            message=f"{len(uploaded_records)} file berhasil diunggah"
+        )
+    except Exception as e:
+        db.rollback()
+        return error_response(message=f"Gagal menyimpan data ke database: {str(e)}", code=500)
+
+        
 # 🔹 GET DOCUMENTS (LISTING)
 @router.get("/") # Hapus response_model=List[DocumentResponse]
 def get_documents(
