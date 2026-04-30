@@ -38,3 +38,12 @@ class DocumentMove(BaseModel):
 
 class BulkDeleteRequest(BaseModel):
     document_ids: List[int]
+
+class BulkMoveRequest(BaseModel):
+    document_ids: List[int]
+    target_folder_id: Optional[int] = None # Sesuaikan nama field di sini
+    # is_shared: Optional[bool] = None # Tambahkan ini
+
+class BulkShareRequest(BaseModel):
+    document_ids: List[int]
+    is_shared: bool

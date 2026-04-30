@@ -8,7 +8,7 @@ import mimetypes
 
 from app.db.session import get_db
 from app.models.document_model import Document
-from app.schemas.document_schema import DocumentCreate, DocumentResponse, DocumentMove, BulkDeleteRequest
+from app.schemas.document_schema import DocumentCreate, DocumentResponse, DocumentMove, BulkDeleteRequest, BulkMoveRequest, BulkShareRequest
 from app.api.deps import get_current_user
 from app.core.response import success_response, error_response
 
@@ -24,11 +24,14 @@ async def view_document(
     # 1. Cari dokumen di database
     document = db.query(Document).filter(
         Document.id == document_id,
-        Document.user_id == current_user.id
+        # Document.user_id == current_user.id
     ).first()
 
-    if not document or document.is_folder:
+    if not document:
         return error_response(message="File tidak ditemukan", code=404)
+
+    if document.user_id != current_user.id and not document.is_shared:
+        return error_response(message="Anda tidak memiliki akses ke file ini", code=403)
 
     file_path = document.file_path
     if not os.path.exists(file_path):
@@ -264,7 +267,7 @@ def bulk_delete_documents(
         db.rollback()
         return error_response(message=f"Gagal melakukan penghapusan bulk: {str(e)}", code=500)
 
-
+# 🔹 MOVE DOCUMENTS/FOLDERS
 @router.put("/{document_id}/move")
 def move_document(
     document_id: int,
@@ -314,3 +317,120 @@ def move_document(
     except Exception as e:
         db.rollback()
         return error_response(message=f"Gagal memindahkan: {str(e)}", code=500)
+
+# 🔹 BULK MOVE DOCUMENTS (Fixed Version)
+@router.post("/bulk-move")
+def bulk_move_documents(
+    payload: BulkMoveRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    # Ambil nilai dari target_folder_id sesuai JSON yang Anda kirim
+    raw_target_id = payload.target_folder_id
+    
+    # Logika: Jika 0 atau None maka pindah ke Root
+    target_id = None if raw_target_id == 0 or raw_target_id is None else raw_target_id
+
+    # 1. Validasi jika pindah ke folder tertentu (bukan root)
+    if target_id is not None:
+        target_folder = db.query(Document).filter(
+            Document.id == target_id,
+            Document.user_id == current_user.id,
+            Document.is_folder == True
+        ).first()
+
+        if not target_folder:
+            return error_response(message=f"Folder tujuan ID {target_id} tidak ditemukan", code=404)
+
+    # 2. Ambil dokumen yang akan dipindahkan
+    documents = db.query(Document).filter(
+        Document.id.in_(payload.document_ids),
+        Document.user_id == current_user.id
+    ).all()
+
+    if not documents:
+        return error_response(message="Dokumen tidak ditemukan", code=404)
+
+    try:
+        moved_count = 0
+        for doc in documents:
+            # Cegah folder pindah ke dirinya sendiri
+            if doc.is_folder and doc.id == target_id:
+                continue
+                
+            doc.parent_id = target_id
+            moved_count += 1
+        
+        db.commit()
+        
+        return success_response(
+            data=None,
+            message=f"{moved_count} item berhasil dipindahkan ke {'Root' if target_id is None else 'Folder ID ' + str(target_id)}"
+        )
+    except Exception as e:
+        db.rollback()
+        return error_response(message=f"Gagal memindahkan: {str(e)}", code=500)
+
+
+def update_share_recursive(db: Session, document: Document, is_shared: bool):
+    """
+    Mengubah status is_shared pada dokumen dan semua turunannya secara rekursif.
+    """
+    # 1. Update dokumen itu sendiri
+    document.is_shared = is_shared
+    
+    # 2. Jika dokumen adalah folder, cari semua anak-anaknya
+    if document.is_folder:
+        children = db.query(Document).filter(Document.parent_id == document.id).all()
+        for child in children:
+            update_share_recursive(db, child, is_shared)
+
+# 🔹 BULK SHARE / UNSHARE (Recursive Version)
+@router.post("/share")
+def bulk_share_documents(
+    payload: BulkShareRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    # Cari dokumen utama yang dipilih user
+    documents = db.query(Document).filter(
+        Document.id.in_(payload.document_ids),
+        Document.user_id == current_user.id
+    ).all()
+
+    if not documents:
+        return error_response(message="Dokumen tidak ditemukan", code=404)
+
+    try:
+        for doc in documents:
+            # Panggil fungsi rekursif untuk memastikan turunannya ikut ter-update
+            update_share_recursive(db, doc, payload.is_shared)
+        
+        db.commit()
+        
+        action = "dibagikan" if payload.is_shared else "berhenti dibagikan"
+        return success_response(
+            data=None,
+            message=f"{len(documents)} item beserta isinya berhasil {action}"
+        )
+    except Exception as e:
+        db.rollback()
+        return error_response(message=f"Gagal mengubah status sharing: {str(e)}", code=500)
+
+# 🔹 GET ALL SHARED DOCUMENTS (Public/Shared Files)
+@router.get("/shared-with-me")
+def get_shared_documents(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    # Mengambil semua dokumen yang is_shared=True 
+    # DAN bukan milik user yang sedang login (untuk fitur Shared with Me)
+    result = db.query(Document).filter(
+        Document.is_shared == True,
+        Document.user_id != current_user.id
+    ).all()
+
+    return success_response(
+        data=result,
+        message="Daftar file yang dibagikan berhasil dimuat"
+    )
