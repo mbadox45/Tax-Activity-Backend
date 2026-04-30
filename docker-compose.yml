@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  # Service untuk Database PostgreSQL
+  db:
+    image: postgres:15-alpine
+    container_name: ardiartax_db
+    restart: always
+    environment:
+      POSTGRES_USER: ardiartax
+      POSTGRES_PASSWORD: bukankaumdajal666
+      POSTGRES_DB: ardiartax_db
+    ports:
+      - "3030:5432" # Akses DB dari luar via port 3030
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Service untuk Adminer (Database Management)
+  adminer:
+    image: adminer
+    container_name: ardiartax_adminer
+    restart: always
+    ports:
+      - "3031:8080" # Akses Adminer via port 3031
+    depends_on:
+      - db
+
+  # Service untuk Backend FastAPI
+  backend:
+    build: .
+    container_name: ardiartax_backend
+    restart: always
+    ports:
+      - "3032:8000" # Akses Backend via port 3032
+    env_file:
+      - .env
+    environment:
+      # Koneksi internal tetap menggunakan port 5432 ke service 'db'
+      DATABASE_URL: postgresql://ardiartax:bukankaumdajal666@db:5432/ardiartax_db
+    command: >
+      sh -c "alembic upgrade head && 
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    volumes:
+      - .:/app
+      - ./uploads:/app/uploads
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:

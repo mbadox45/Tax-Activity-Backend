@@ -45,9 +45,15 @@ uvicorn main:app --reload
 Buat file `.env` di root project, lalu isi seperti berikut:
 
 ```env
-MONGO_URI=mongodb://localhost:27017
-DB_NAME=tax_activity
-UPLOAD_DIR=uploads
+APP_NAME="ArdiarTax Backend"
+DATABASE_URL=postgresql://ardiartax:bukankaumdajal666@db:5432/ardiartax_db
+SECRET_KEY=yoursecretkey
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+TESSERACT_PATH=/usr/bin/tesseract
+UPLOAD_DIR=uploads/documents
+CACHE_DIR=uploads/cache_pdf
+
 ```
 
 ---
@@ -68,16 +74,10 @@ Folder ini digunakan untuk menyimpan file PDF yang di-upload sebelum diproses.
 
 ## 🧪 API Endpoints
 
-### 🔹 Upload Single File
+### 🔹 URL Docs API
 
 ```
-POST /upload
-```
-
-### 🔹 Upload Multiple Files (Bulk)
-
-```
-POST /parse-peb-bulk
+http:://localhost:3031/docs
 ```
 
 ---
@@ -100,4 +100,5 @@ POST /parse-peb-bulk
 
 ## 👨‍💻 Author
 
-Tax Activity Backend
+MbadoxDev45
+Rio Teguh Ardiara
