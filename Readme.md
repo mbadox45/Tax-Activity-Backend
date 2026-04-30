@@ -33,9 +33,7 @@ main.py
 ## ⚙️ Setup
 
 ```bash
-pip install -r requirements.txt
-cp .env.example .env
-uvicorn main:app --reload
+docker compose up -d
 ```
 
 ---
