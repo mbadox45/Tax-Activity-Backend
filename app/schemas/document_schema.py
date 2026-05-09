@@ -1,5 +1,5 @@
 # app/schemas/document_schema.py
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, Field
 from typing import Optional, List
 from datetime import datetime
 
@@ -47,3 +47,6 @@ class BulkMoveRequest(BaseModel):
 class BulkShareRequest(BaseModel):
     document_ids: List[int]
     is_shared: bool
+
+class DocumentRename(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)

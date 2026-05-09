@@ -1,14 +1,17 @@
 # app/api/routes/document.py
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+
+import os, uuid
+import mimetypes
+import zipfile
+import tempfile
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
-import os, uuid
-import mimetypes
 
 from app.db.session import get_db
 from app.models.document_model import Document
-from app.schemas.document_schema import DocumentCreate, DocumentResponse, DocumentMove, BulkDeleteRequest, BulkMoveRequest, BulkShareRequest
+from app.schemas.document_schema import DocumentCreate, DocumentResponse, DocumentMove, BulkDeleteRequest, BulkMoveRequest, BulkShareRequest, DocumentRename
 from app.api.deps import get_current_user
 from app.core.response import success_response, error_response
 
@@ -434,3 +437,150 @@ def get_shared_documents(
         data=result,
         message="Daftar file yang dibagikan berhasil dimuat"
     )
+
+# 🔹 RENAME DOCUMENT OR FOLDER
+@router.put("/{document_id}/rename")
+def rename_document(
+    document_id: int,
+    payload: DocumentRename,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    # 1. Cari dokumen/folder berdasarkan ID dan kepemilikan
+    document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.user_id == current_user.id
+    ).first()
+
+    if not document:
+        return error_response(message="Dokumen atau folder tidak ditemukan", code=404)
+
+    # 2. Opsional: Validasi jika nama baru sama dengan nama lama (efisiensi)
+    if document.name == payload.name:
+        return success_response(data=document, message="Nama tetap sama")
+
+    # 3. Simpan nama lama untuk keperluan pesan response
+    old_name = document.name
+    item_type = "Folder" if document.is_folder else "File"
+
+    try:
+        # 4. Update nama
+        document.name = payload.name
+        
+        db.commit()
+        db.refresh(document)
+
+        return success_response(
+            data=document,
+            message=f"{item_type} '{old_name}' berhasil diubah menjadi '{document.name}'"
+        )
+    except Exception as e:
+        db.rollback()
+        return error_response(message=f"Gagal mengubah nama: {str(e)}", code=500)
+
+# 🔹 DOWNLOAD FILE
+@router.get("/{document_id}/download")
+def download_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    # 1. Cari dokumen di database
+    document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.user_id == current_user.id
+    ).first()
+
+    # 2. Validasi keberadaan dokumen
+    if not document:
+        return error_response(message="Dokumen tidak ditemukan", code=404)
+
+    if document.is_folder:
+        return error_response(message="Folder tidak dapat diunduh langsung sebagai file tunggal", code=400)
+
+    # 3. Cek apakah file fisik benar-benar ada di storage
+    # Pastikan document.file_path menyimpan path lengkap atau relatif yang benar
+    file_path = document.file_path
+    
+    if not os.path.exists(file_path):
+        return error_response(message="File fisik tidak ditemukan di server", code=404)
+
+    # 4. Tentukan nama file yang akan muncul saat didownload
+    # Kita ambil nama asli dari database (misal: "Laporan Pajak.pdf")
+    download_name = document.name
+
+    # 5. Kirim file sebagai response download
+    return FileResponse(
+        path=file_path, 
+        filename=download_name,  # Ini yang menentukan nama file saat didownload
+        media_type='application/octet-stream'
+    )
+
+
+# 🔹 DOWNLOAD FOLDER AS ZIP
+@router.get("/{folder_id}/download-folder")
+def download_folder_zip(
+    folder_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    # 1. Cari folder utama
+    root_folder = db.query(Document).filter(
+        Document.id == folder_id,
+        Document.user_id == current_user.id,
+        Document.is_folder == True
+    ).first()
+
+    if not root_folder:
+        return error_response(message="Folder tidak ditemukan", code=404)
+
+
+    # 2. Buat file temporary untuk menyimpan ZIP
+    # Kita gunakan tempfile agar tidak memenuhi storage permanen
+    temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+    temp_zip_path = temp_zip.name
+    temp_zip.close()
+
+    try:
+        with zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            
+            # Fungsi pembantu untuk menelusuri database secara rekursif
+            def add_to_zip(current_folder_id, current_path=""):
+                # Cari semua isi folder ini
+                items = db.query(Document).filter(
+                    Document.parent_id == current_folder_id,
+                    Document.user_id == current_user.id
+                ).all()
+
+                for item in items:
+                    # Tentukan path di dalam ZIP
+                    # Misal: "Folder A/Subfolder B/file.pdf"
+                    zip_entry_path = os.path.join(current_path, item.name)
+
+                    if item.is_folder:
+                        # Jika folder, buat entri folder dan telusuri isinya
+                        zf.writestr(zip_entry_path + '/', '') # Menambahkan folder kosong
+                        add_to_zip(item.id, zip_entry_path)
+                    else:
+                        # Jika file, cek keberadaan file fisik dan tambahkan ke ZIP
+                        if item.file_path and os.path.exists(item.file_path):
+                            zf.write(item.file_path, zip_entry_path)
+
+            # Mulai proses rekursif dari folder utama
+            add_to_zip(root_folder.id, root_folder.name)
+
+        # 3. Kirim file ZIP dan hapus file temp setelah selesai dikirim
+        # background_tasks memastikan file temp dihapus dari server setelah didownload
+        background_tasks.add_task(os.remove, temp_zip_path)
+
+        return FileResponse(
+            path=temp_zip_path,
+            filename=f"{root_folder.name}.zip",
+            media_type="application/x-zip-compressed"
+        )
+
+    except Exception as e:
+        if os.path.exists(temp_zip_path):
+            os.remove(temp_zip_path)
+        return error_response(message=f"Gagal membuat ZIP: {str(e)}", code=500)
