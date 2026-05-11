@@ -11,8 +11,10 @@ from typing import List, Optional
 
 from app.db.session import get_db
 from app.models.document_model import Document
-from app.schemas.document_schema import DocumentCreate, DocumentResponse, DocumentMove, BulkDeleteRequest, BulkMoveRequest, BulkShareRequest, DocumentRename
+from app.models.document_access_model import DocumentAccess, AccessLevel
+from app.schemas.document_schema import DocumentCreate, DocumentResponse, DocumentMove, BulkDeleteRequest, BulkMoveRequest, BulkShareRequest, DocumentRename, DocumentShareRequest
 from app.api.deps import get_current_user
+from app.core.security import check_document_access
 from app.core.response import success_response, error_response
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
@@ -485,6 +487,14 @@ def download_document(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+
+    has_access = check_document_access(db, document_id, current_user.id)
+
+    if has_access is None:
+        return error_response("Dokumen tidak ditemukan", 404)
+    if has_access is False:
+        return error_response("Anda tidak memiliki akses ke dokumen ini", 403)
+        
     # 1. Cari dokumen di database
     document = db.query(Document).filter(
         Document.id == document_id,
@@ -584,3 +594,53 @@ def download_folder_zip(
         if os.path.exists(temp_zip_path):
             os.remove(temp_zip_path)
         return error_response(message=f"Gagal membuat ZIP: {str(e)}", code=500)
+
+@router.post("/share-v2")
+def share_documents_v2(
+    payload: DocumentShareRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    try:
+        # Loop dokumen yang ingin dibagikan
+        for doc_id in payload.document_ids:
+            # Validasi: Apakah user ini benar-benar owner? 
+            # (Hanya owner yang boleh bagi-bagi akses)
+            doc = db.query(Document).filter(
+                Document.id == doc_id, 
+                Document.user_id == current_user.id
+            ).first()
+
+            if not doc:
+                continue # Skip jika bukan miliknya atau tidak ada
+
+            # Bersihkan akses lama (Sync mode)
+            db.query(DocumentAccess).filter(DocumentAccess.document_id == doc_id).delete()
+
+            if payload.is_public:
+                # Tambah akses publik (semua orang)
+                new_access = DocumentAccess(
+                    document_id=doc_id,
+                    user_id=None,
+                    access_level=AccessLevel.VIEWER
+                )
+                db.add(new_access)
+            else:
+                # Tambah akses spesifik user
+                for member in payload.members:
+                    new_access = DocumentAccess(
+                        document_id=doc_id,
+                        user_id=member.user_id,
+                        access_level=member.access_level
+                    )
+                    db.add(new_access)
+
+            # Update flag is_shared di tabel utama
+            doc.is_shared = True if (payload.is_public or payload.members) else False
+
+        db.commit()
+        return success_response(data=None, message="Berhasil memperbarui hak akses")
+
+    except Exception as e:
+        db.rollback()
+        return error_response(message=str(e), code=500)

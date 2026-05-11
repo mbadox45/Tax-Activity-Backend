@@ -2,6 +2,7 @@
 from pydantic import BaseModel, field_validator, Field
 from typing import Optional, List
 from datetime import datetime
+from app.models.document_access_model import AccessLevel
 
 class DocumentBase(BaseModel):
     name: str
@@ -50,3 +51,12 @@ class BulkShareRequest(BaseModel):
 
 class DocumentRename(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
+
+class ShareMember(BaseModel):
+    user_id: Optional[int] = None # Jika None dan is_public True, maka untuk semua
+    access_level: AccessLevel
+
+class DocumentShareRequest(BaseModel):
+    document_ids: List[int]
+    is_public: bool = False
+    members: List[ShareMember] = []

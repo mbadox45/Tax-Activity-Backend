@@ -29,3 +29,4 @@ class Document(Base):
     # Relations
     owner = relationship("User", back_populates="documents")
     children = relationship("Document", backref="parent", remote_side=[id])
+    shared_with = relationship("DocumentAccess", back_populates="document", cascade="all, delete-orphan")
