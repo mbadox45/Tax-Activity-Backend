@@ -25,3 +25,4 @@ python-magic
 fpdf2
 mammoth
 weasyprint
+pm2

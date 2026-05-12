@@ -14,9 +14,9 @@ def run_seed(db: Session):
 
         if not superuser:
             user = User(
-                name="Admin",
-                username="admin@ardiartax.com",
-                password=hash_password("admin123"),
+                name="Rio Teguh A",
+                username="rioteguhard@gmail.com",
+                password=hash_password("123456"),
                 role="admin",
                 is_active=True
             )
