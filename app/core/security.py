@@ -1,5 +1,7 @@
+# app/core/security.py
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from fastapi import HTTPException, UploadFile, status
 from app.models.document_model import Document
 from app.models.document_access_model import DocumentAccess, AccessLevel
 from passlib.context import CryptContext
@@ -60,3 +62,44 @@ def check_document_access(db: Session, document_id: int, user_id: int, need_edit
         return False
 
     return True
+
+async def check_storage_limit(db: Session, user_id: int, file: UploadFile, is_admin: bool = False):
+    """
+    Mengecek apakah penyimpanan user masih mencukupi untuk mengunggah file baru.
+    Admin dikecualikan dari pengecekan ini.
+    """
+    # 1. Jika Admin, langsung izinkan tanpa cek kuota
+    if is_admin:
+        # Kita tetap ambil size agar return value konsisten (int)
+        await file.seek(0, os.SEEK_END)
+        file_size = await file.tell()
+        await file.seek(0)
+        return file_size
+
+    # 2. Ambil ukuran file (dalam bytes)
+    await file.seek(0, os.SEEK_END)
+    file_size = await file.tell()
+    await file.seek(0) # WAJIB agar file tidak korup/kosong saat disave
+
+    # 3. Cari data storage user di database
+    storage = db.query(UserStorage).filter(UserStorage.user_id == user_id).first()
+    
+    if not storage:
+        storage = UserStorage(user_id=user_id)
+        db.add(storage)
+        db.commit()
+        db.refresh(storage)
+
+    # 4. Kalkulasi: Cek apakah melebihi limit
+    if storage.used_storage + file_size > storage.max_storage:
+        max_mb = round(storage.max_storage / (1024 * 1024), 2)
+        used_mb = round(storage.used_storage / (1024 * 1024), 2)
+        current_file_mb = round(file_size / (1024 * 1024), 2)
+        
+        raise HTTPException(
+            status_code=400,
+            detail=f"Penyimpanan penuh. Kuota: {max_mb}MB, Terpakai: {used_mb}MB. "
+                   f"File Anda ({current_file_mb}MB) melebihi sisa kuota."
+        )
+
+    return file_size # Mengembalikan file_size untuk digunakan saat update DB nanti

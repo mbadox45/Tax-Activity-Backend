@@ -12,6 +12,7 @@ from app.api.routes.activity import router as activity_router
 from app.api.routes.peb import router as peb_router
 from app.api.routes.peb_terbit import router as peb_terbit_router
 from app.api.routes.document import router as document_router
+from app.api.routes.storage import router as storage_router
 
 # Exception handlers
 from app.core.exception_handler import (
@@ -67,7 +68,7 @@ api_router.include_router(activity_router)
 api_router.include_router(peb_router)
 api_router.include_router(peb_terbit_router)
 api_router.include_router(document_router)
-
+api_router.include_router(storage_router)
 # 🔥 include ke app
 app.include_router(api_router)
 

@@ -5,3 +5,4 @@ from .peb_model import PEB
 from .peb_terbit_model import PEBTerbit
 from .document_model import Document
 from .document_access_model import DocumentAccess
+from .storage_model import UserStorage
