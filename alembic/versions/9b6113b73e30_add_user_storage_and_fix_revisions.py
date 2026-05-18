@@ -1,8 +1,8 @@
-"""add storage model
+"""add user storage and fix revisions
 
-Revision ID: 1c3339eb2912
-Revises: 790529dcb78c
-Create Date: 2026-05-13 10:49:46.963341
+Revision ID: 9b6113b73e30
+Revises: 
+Create Date: 2026-05-17 20:06:21.398476
 
 """
 from typing import Sequence, Union
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '1c3339eb2912'
-down_revision: Union[str, Sequence[str], None] = '790529dcb78c'
+revision: str = '9b6113b73e30'
+down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

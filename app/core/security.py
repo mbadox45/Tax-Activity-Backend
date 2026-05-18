@@ -1,7 +1,9 @@
 # app/core/security.py
+import os
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from fastapi import HTTPException, UploadFile, status
+from app.models.storage_model import UserStorage
 from app.models.document_model import Document
 from app.models.document_access_model import DocumentAccess, AccessLevel
 from passlib.context import CryptContext
@@ -63,25 +65,22 @@ def check_document_access(db: Session, document_id: int, user_id: int, need_edit
 
     return True
 
-async def check_storage_limit(db: Session, user_id: int, file: UploadFile, is_admin: bool = False):
+async def check_storage_limit(db: Session, user_id: int, file: UploadFile):
     """
     Mengecek apakah penyimpanan user masih mencukupi untuk mengunggah file baru.
-    Admin dikecualikan dari pengecekan ini.
+    Aman dari masalah kompatibilitas fungsi seek().
     """
-    # 1. Jika Admin, langsung izinkan tanpa cek kuota
-    if is_admin:
-        # Kita tetap ambil size agar return value konsisten (int)
-        await file.seek(0, os.SEEK_END)
-        file_size = await file.tell()
-        await file.seek(0)
-        return file_size
+    # 1. Ambil ukuran file (dalam bytes) menggunakan properti bawaan FastAPI
+    # Jika versi FastAPI Anda mendukung .size, gunakan itu. Jika tidak, gunakan len(content)
+    file_size = getattr(file, "size", None)
+    
+    if file_size is None:
+        # Jalur alternatif jika properti .size tidak tersedia di versi FastAPI Anda
+        content = await file.read()
+        file_size = len(content)
+        await file.seek(0) # Kembalikan ke 0 agar saat di-route utama bisa dibaca ulang
 
-    # 2. Ambil ukuran file (dalam bytes)
-    await file.seek(0, os.SEEK_END)
-    file_size = await file.tell()
-    await file.seek(0) # WAJIB agar file tidak korup/kosong saat disave
-
-    # 3. Cari data storage user di database
+    # 2. Cari batasan kuota (max_storage) user di database
     storage = db.query(UserStorage).filter(UserStorage.user_id == user_id).first()
     
     if not storage:
@@ -90,10 +89,16 @@ async def check_storage_limit(db: Session, user_id: int, file: UploadFile, is_ad
         db.commit()
         db.refresh(storage)
 
-    # 4. Kalkulasi: Cek apakah melebihi limit
-    if storage.used_storage + file_size > storage.max_storage:
+    # 3. Hitung TOTAL UKURAN FILE yang sudah ada di DB secara real-time
+    current_used_bytes = db.query(func.sum(Document.file_size)).filter(
+        Document.user_id == user_id,
+        Document.is_folder == False
+    ).scalar() or 0
+
+    # 4. Kalkulasi: Cek apakah file baru ini akan melebihi limit?
+    if current_used_bytes + file_size > storage.max_storage:
         max_mb = round(storage.max_storage / (1024 * 1024), 2)
-        used_mb = round(storage.used_storage / (1024 * 1024), 2)
+        used_mb = round(current_used_bytes / (1024 * 1024), 2)
         current_file_mb = round(file_size / (1024 * 1024), 2)
         
         raise HTTPException(
@@ -102,4 +107,4 @@ async def check_storage_limit(db: Session, user_id: int, file: UploadFile, is_ad
                    f"File Anda ({current_file_mb}MB) melebihi sisa kuota."
         )
 
-    return file_size # Mengembalikan file_size untuk digunakan saat update DB nanti
+    return file_size

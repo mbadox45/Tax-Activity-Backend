@@ -6,15 +6,17 @@ import zipfile
 import tempfile
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.db.session import get_db
+from app.models.storage_model import UserStorage
 from app.models.document_model import Document
 from app.models.document_access_model import DocumentAccess, AccessLevel
 from app.schemas.document_schema import DocumentCreate, DocumentResponse, DocumentMove, BulkDeleteRequest, BulkMoveRequest, BulkShareRequest, DocumentRename, DocumentShareRequest
 from app.api.deps import get_current_user
-from app.core.security import check_document_access
+from app.core.security import check_document_access, check_storage_limit
 from app.core.response import success_response, error_response
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
@@ -107,7 +109,7 @@ def create_folder(
         message="Folder berhasil ditambahkan"
     )
 
-# 🔹 UPLOAD FILE (Multiple Support dengan Pengecekan Storage)
+# 🔹 UPLOAD FILE (Multiple Support)
 @router.post("/upload") 
 async def upload_document(
     files: List[UploadFile] = File(...), 
@@ -118,72 +120,67 @@ async def upload_document(
 ):
     # Pastikan folder penyimpanan ada
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    
-    # Handle parent_id 0 menjadi None
     actual_parent_id = None if parent_id == 0 else parent_id
     
     # --- LOGIKA PENGECEKAN STORAGE ---
     total_upload_size = 0
-    file_sizes = [] # Simpan ukuran tiap file untuk update DB nanti
+    file_sizes = [] 
 
     for file in files:
-        # Panggil fungsi security yang sudah kita buat
-        # Fungsi ini akan melempar HTTPException jika kuota penuh
+        # Panggilan fungsi sekarang lebih bersih tanpa parameter is_admin
         size = await check_storage_limit(
             db=db, 
             user_id=current_user.id, 
-            file=file, 
-            is_admin=current_user.is_admin
+            file=file
         )
         total_upload_size += size
         file_sizes.append(size)
 
-    # Re-kalkulasi sekali lagi untuk total semua file yang diupload (Multiple Check)
-    if not current_user.is_admin:
-        storage = db.query(UserStorage).filter(UserStorage.user_id == current_user.id).first()
-        if storage.used_storage + total_upload_size > storage.max_storage:
-            raise HTTPException(
-                status_code=400, 
-                detail="Total file yang diunggah melebihi sisa kuota penyimpanan Anda."
-            )
+    # Re-kalkulasi total akumulasi semua file (Wajib untuk semua user)
+    storage = db.query(UserStorage).filter(UserStorage.user_id == current_user.id).first()
+    max_bytes = storage.max_storage if storage else 104857600 # Default 100MB jika kosong
+
+    current_used_bytes = db.query(func.sum(Document.file_size)).filter(
+        Document.user_id == current_user.id,
+        Document.is_folder == False
+    ).scalar() or 0
+
+    if current_used_bytes + total_upload_size > max_bytes:
+        max_mb = round(max_bytes / (1024 * 1024), 2)
+        used_mb = round(current_used_bytes / (1024 * 1024), 2)
+        upload_mb = round(total_upload_size / (1024 * 1024), 2)
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Total file ({upload_mb}MB) melebihi sisa kuota Anda. "
+                   f"Terpakai: {used_mb}MB / Kuota: {max_mb}MB."
+        )
     # --- END LOGIKA PENGECEKAN ---
 
     uploaded_records = []
 
-    # Gunakan enumerate untuk mengambil index agar cocok dengan file_sizes
     for index, file in enumerate(files):
-        # 1. Logika simpan file fisik
         file_ext = file.filename.split(".")[-1] if "." in file.filename else ""
         file_name = f"{uuid.uuid4()}_{file.filename}"
         file_path = os.path.join(UPLOAD_DIR, file_name)
         
-        # Karena kita sudah panggil seek(0) di check_storage_limit, 
-        # kita bisa langsung baca filenya di sini
         content = await file.read()
         
         with open(file_path, "wb") as f:
             f.write(content)
 
-        # 2. Buat record database dokumen
         new_file = Document(
             name=file.filename,
             is_folder=False,
             is_shared=is_shared,
             file_path=file_path,
             file_type=file_ext,
-            file_size=file_sizes[index], # Gunakan size yang sudah dihitung
+            file_size=file_sizes[index], 
             parent_id=actual_parent_id,
             user_id=current_user.id
         )
         db.add(new_file)
         uploaded_records.append(new_file)
 
-    # 3. Update Kuota Storage User (Hanya jika bukan Admin)
-    if not current_user.is_admin:
-        storage = db.query(UserStorage).filter(UserStorage.user_id == current_user.id).first()
-        storage.used_storage += total_upload_size
-
-    # 4. Commit semua sekaligus
     try:
         db.commit()
         for record in uploaded_records:
@@ -191,11 +188,10 @@ async def upload_document(
             
         return success_response(
             data=uploaded_records,
-            message=f"{len(uploaded_records)} file berhasil diunggah dan kuota diperbarui"
+            message=f"{len(uploaded_records)} file berhasil diunggah"
         )
     except Exception as e:
         db.rollback()
-        # Jika DB gagal, file fisik sudah terlanjur terhapus (opsional: tambahkan logika hapus file jika rollback)
         return error_response(message=f"Gagal menyimpan data ke database: {str(e)}", code=500)
 
 

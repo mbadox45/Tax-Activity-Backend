@@ -11,6 +11,6 @@ class UserStorage(Base):
     
     # Menggunakan BigInteger (dalam bytes) agar akurat (1024^3 = 1GB)
     used_storage = Column(BigInteger, default=0) 
-    max_storage = Column(BigInteger, default=104857600) # Default 100MB
+    max_storage = Column(BigInteger, default=549755813888) # Default 512GB
 
     user = relationship("User", back_populates="storage")
