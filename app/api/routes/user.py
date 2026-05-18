@@ -80,16 +80,29 @@ def get_me(current_user: User = Depends(get_current_user)):
         message="Success"
     )
 
-# get all users (admin only)
+# get all users (admin & super_admin only)
 @router.get("/")
 def get_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Forbidden")
+    # 1. Validasi awal: Hanya admin dan super_admin yang boleh masuk
+    if current_user.role not in ["admin", "super_admin"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Akses ditolak")
 
-    users = db.query(User).all()
+    # 2. Inisialisasi query dasar
+    query = db.query(User)
+
+    # 3. Logika Filter berdasarkan Role
+    if current_user.role == "admin":
+        # Admin biasa hanya boleh melihat user dengan role 'user' atau 'admin'
+        query = query.filter(User.role.in_(["user", "admin"]))
+    
+    # Note: Jika current_user.role == "super_admin", query tidak difilter 
+    # sehingga otomatis akan menarik semua data user (termasuk super_admin lain)
+
+    # 4. Eksekusi query ke database
+    users = query.all()
 
     return success_response(
         data=[
