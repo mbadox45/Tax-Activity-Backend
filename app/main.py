@@ -3,7 +3,8 @@
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, engine
+from app.db.base import Base
 from app.db.seed import run_seed
 # API router
 # from app.api.routes_peb import router as peb_router
@@ -77,6 +78,7 @@ app.include_router(api_router)
 # =============================
 @app.on_event("startup")
 def startup_event():
+    Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         run_seed(db)
