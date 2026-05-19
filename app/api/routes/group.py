@@ -41,7 +41,7 @@ def get_group_tree(db: Session = Depends(get_db)):
     except Exception as e:
         return error_response(
             message=f"Gagal mengambil struktur group: {str(e)}", 
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            status_code=500
         )
 
 # =========================================================================
