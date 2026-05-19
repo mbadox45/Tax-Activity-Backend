@@ -1,5 +1,5 @@
 # app/models/user_model.py
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
@@ -16,6 +16,7 @@ class User(Base):
 
     is_active = Column(Boolean, default=True)
     role = Column(String(50), default="user", nullable=False)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="SET NULL"), nullable=True)
 
     # RELATIONS
     activities = relationship(
@@ -59,3 +60,5 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan"
     )
+
+    group = relationship("Group", back_populates="users")

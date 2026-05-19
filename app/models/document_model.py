@@ -3,6 +3,7 @@ from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.base import Base
+from app.models.group_model import document_group_sharing
 
 class Document(Base):
     __tablename__ = "documents"
@@ -22,6 +23,7 @@ class Document(Base):
     # Hierarki Folder (Self-Referencing)
     parent_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    share_with_all = Column(Boolean, default=False, nullable=False)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -30,3 +32,8 @@ class Document(Base):
     owner = relationship("User", back_populates="documents")
     children = relationship("Document", backref="parent", remote_side=[id])
     shared_with = relationship("DocumentAccess", back_populates="document", cascade="all, delete-orphan")
+    shared_with_groups = relationship(
+        "Group",
+        secondary=document_group_sharing,
+        back_populates="shared_documents"
+    )

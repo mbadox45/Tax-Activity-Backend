@@ -5,6 +5,7 @@ from sqlalchemy import func, or_
 from fastapi import HTTPException, UploadFile, status
 from app.models.storage_model import UserStorage
 from app.models.document_model import Document
+from app.models.user_model import User
 from app.models.document_access_model import DocumentAccess, AccessLevel
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
@@ -108,3 +109,27 @@ async def check_storage_limit(db: Session, user_id: int, file: UploadFile):
         )
 
     return file_size
+
+def get_accessible_documents(db: Session, current_user: User):
+    """
+    Mengambil semua dokumen yang berhak diakses oleh pengguna saat ini (current_user)
+    berdasarkan aturan kepemilikan, publik (share_with_all), atau group/sub-group sharing.
+    """
+    query = db.query(Document)
+    
+    # 1. Bypass Hak Akses jika role adalah super_admin
+    if current_user.role == "super_admin":
+        return query.all()
+        
+    # 2. Kondisi dasar bagi user biasa dan admin biasa
+    conditions = [
+        Document.user_id == current_user.id,        # Hak akses sebagai pemilik dokumen
+        Document.share_with_all == True             # Hak akses karena dokumen bersifat publik
+    ]
+    
+    # 3. Hak akses jika dokumen dibagikan ke Group atau Sub-Group tempat user bernaung
+    if current_user.group_id:
+        conditions.append(Document.shared_with_groups.any(id=current_user.group_id))
+        
+    # Gabungkan semua kondisi dengan operator OR (salah satu terpenuhi = boleh akses)
+    return query.filter(or_(*conditions)).all()

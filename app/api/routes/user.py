@@ -110,11 +110,14 @@ def get_users(
                 "id": user.id,
                 "username": user.username,
                 "name": user.name,
-                "role": user.role
+                "role": user.role,
+                # 🔥 Tambahan data group & sub-group dinamis
+                "group_id": user.group_id,
+                "group_name": user.group.name if user.group else None
             }
             for user in users
         ],
-        message="Success"
+        message="Success fetch all users"
     )
 
 # update user (admin only)

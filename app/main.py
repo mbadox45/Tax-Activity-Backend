@@ -14,6 +14,8 @@ from app.api.routes.peb import router as peb_router
 from app.api.routes.peb_terbit import router as peb_terbit_router
 from app.api.routes.document import router as document_router
 from app.api.routes.storage import router as storage_router
+from app.api.routes.document_sharing import router as document_sharing_router
+from app.api.routes.group import router as group_router  # Pastikan mengimport router group
 
 # Exception handlers
 from app.core.exception_handler import (
@@ -69,7 +71,9 @@ api_router.include_router(activity_router)
 api_router.include_router(peb_router)
 api_router.include_router(peb_terbit_router)
 api_router.include_router(document_router)
+api_router.include_router(document_sharing_router)
 api_router.include_router(storage_router)
+api_router.include_router(group_router)
 # 🔥 include ke app
 app.include_router(api_router)
 
