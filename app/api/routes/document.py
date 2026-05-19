@@ -13,8 +13,9 @@ from typing import List, Optional
 from app.db.session import get_db
 from app.models.storage_model import UserStorage
 from app.models.document_model import Document
+from app.models.group_model import Group
 from app.models.document_access_model import DocumentAccess, AccessLevel
-from app.schemas.document_schema import DocumentCreate, DocumentResponse, DocumentMove, BulkDeleteRequest, BulkMoveRequest, BulkShareRequest, DocumentRename, DocumentShareRequest
+from app.schemas.document_schema import DocumentCreate, DocumentResponse, DocumentMove, BulkDeleteRequest, BulkMoveRequest, BulkShareRequest, DocumentRename, DocumentShareRequest, BulkShareRequest
 from app.api.deps import get_current_user
 from app.core.security import check_document_access, check_storage_limit
 from app.core.response import success_response, error_response
@@ -407,18 +408,25 @@ def bulk_move_documents(
         return error_response(message=f"Gagal memindahkan: {str(e)}", code=500)
 
 
-def update_share_recursive(db: Session, document: Document, is_shared: bool):
-    """
-    Mengubah status is_shared pada dokumen dan semua turunannya secara rekursif.
-    """
-    # 1. Update dokumen itu sendiri
-    document.is_shared = is_shared
-    
-    # 2. Jika dokumen adalah folder, cari semua anak-anaknya
-    if document.is_folder:
-        children = db.query(Document).filter(Document.parent_id == document.id).all()
+# 🛠️ FUNGSI REKURSIF: Mengupdate Folder beserta seluruh isi file/sub-folder di dalamnya
+def update_share_recursive(db: Session, doc: Document, is_shared: bool, share_with_all: bool, groups: List[Group]):
+    # 1. Update flag dasar dokumen/folder saat ini
+    doc.is_shared = is_shared
+    doc.share_with_all = share_with_all if is_shared else False
+
+    if is_shared:
+        # Jika share=True, pasang daftar group yang dipilih (bersihkan duplikasi dulu)
+        doc.shared_with_groups = list(set(groups))
+    else:
+        # Jika unshare (share=False), kosongkan seluruh relasi group
+        doc.shared_with_groups = []
+
+    # 2. Jika item ini adalah FOLDER, cari semua anaknya secara rekursif
+    if doc.is_folder:
+        # Mencari anak berdasarkan parent_id dokumen saat ini
+        children = db.query(Document).filter(Document.parent_id == doc.id).all()
         for child in children:
-            update_share_recursive(db, child, is_shared)
+            update_share_recursive(db, child, is_shared, share_with_all, groups)
 
 # 🔹 BULK SHARE / UNSHARE (Recursive Version)
 @router.post("/share")
@@ -427,30 +435,48 @@ def bulk_share_documents(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    # Cari dokumen utama yang dipilih user
+    # 1. Cari dokumen-dokumen utama milik current_user yang valid
     documents = db.query(Document).filter(
         Document.id.in_(payload.document_ids),
         Document.user_id == current_user.id
     ).all()
 
     if not documents:
-        return error_response(message="Dokumen tidak ditemukan", code=404)
+        return error_response(message="Dokumen tidak ditemukan atau Anda bukan pemilik dokumen", status_code=status.HTTP_404_NOT_FOUND)
+
+    # 2. Jika statusnya MEMBAGIKAN, siapkan objek group berdasarkan list group_ids dari payload
+    target_groups = []
+    if payload.is_shared and payload.group_ids:
+        target_groups = db.query(Group).filter(Group.id.in_(payload.group_ids)).all()
+        if not target_groups and not payload.share_with_all:
+            return error_response(message="Group yang dipilih tidak valid", status_code=status.HTTP_400_BAD_REQUEST)
 
     try:
+        # 3. Proses setiap dokumen yang dipilih menggunakan fungsi rekursif
         for doc in documents:
-            # Panggil fungsi rekursif untuk memastikan turunannya ikut ter-update
-            update_share_recursive(db, doc, payload.is_shared)
+            update_share_recursive(
+                db=db,
+                doc=doc,
+                is_shared=payload.is_shared,
+                share_with_all=payload.share_with_all,
+                groups=target_groups
+            )
         
+        # 4. Commit semua perubahan sekaligus ke PostgreSQL
         db.commit()
         
         action = "dibagikan" if payload.is_shared else "berhenti dibagikan"
         return success_response(
             data=None,
-            message=f"{len(documents)} item beserta isinya berhasil {action}"
+            message=f"{len(documents)} item beserta seluruh isinya berhasil {action}"
         )
+        
     except Exception as e:
         db.rollback()
-        return error_response(message=f"Gagal mengubah status sharing: {str(e)}", code=500)
+        return error_response(
+            message=f"Gagal mengubah status sharing: {str(e)}", 
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 # 🔹 GET ALL SHARED DOCUMENTS (Public/Shared Files)
 @router.get("/shared-with-me")

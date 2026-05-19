@@ -45,10 +45,6 @@ class BulkMoveRequest(BaseModel):
     target_folder_id: Optional[int] = None # Sesuaikan nama field di sini
     # is_shared: Optional[bool] = None # Tambahkan ini
 
-class BulkShareRequest(BaseModel):
-    document_ids: List[int]
-    is_shared: bool
-
 class DocumentRename(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
 
@@ -60,3 +56,9 @@ class DocumentShareRequest(BaseModel):
     document_ids: List[int]
     is_public: bool = False
     members: List[ShareMember] = []
+
+class BulkShareRequest(BaseModel):
+    document_ids: List[int]
+    is_shared: bool
+    share_with_all: Optional[bool] = False  # True jika ingin dibagikan ke semua user aplikasi
+    group_ids: Optional[List[int]] = []     # List ID Group/Sub-Group yang diberikan akses
