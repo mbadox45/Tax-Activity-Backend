@@ -195,12 +195,14 @@ def update_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # 1. Validasi Hak Akses Role
     if current_user.role not in ["admin", "super_admin"]:
         return error_response(
             message="Forbidden: Hanya Admin yang diizinkan",
             code=403
         )
 
+    # 2. Cari Data User yang Akan Di-update
     user = db.query(User).filter(User.id == user_id).first()
 
     if not user:
@@ -209,25 +211,42 @@ def update_user(
             code=404
         )
 
-    user.username = payload.username
-    user.name = payload.name
-    user.role = payload.role
+    # 3. 🔥 PERBAIKAN: Ekstrak data payload dan map secara otomatis ke model database
+    # Menggunakan exclude_unset=True agar field yang tidak dikirim di request tidak ikut menimpa data lama
+    update_data = payload.model_dump(exclude_unset=True)
 
-    if payload.password:
-        user.password = hash_password(payload.password)
+    for key, value in update_data.items():
+        if key == "password":
+            if value: # Hanya hash password jika ada isinya
+                user.password = hash_password(value)
+        else:
+            # Mengeset nilai ke model user secara dinamis (termasuk group_id & is_active)
+            setattr(user, key, value)
 
-    db.commit()
-    db.refresh(user)
+    # 4. Simpan ke Database
+    try:
+        db.commit()
+        db.refresh(user)
 
-    return success_response(
-        data={
-            "id": user.id,
-            "username": user.username,
-            "name": user.name,
-            "role": user.role
-        },
-        message="User updated"
-    )
+        # 5. Kembalikan Response Lengkap dengan Status Baru
+        return success_response(
+            data={
+                "id": user.id,
+                "username": user.username,
+                "name": user.name,
+                "role": user.role,
+                "is_active": user.is_active,
+                "group_id": user.group_id,
+                "group_name": user.group.name if user.group else None
+            },
+            message="User updated successfully"
+        )
+    except Exception as e:
+        db.rollback()
+        return error_response(
+            message=f"Gagal memperbarui data user: {str(e)}",
+            code=500
+        )
 
 # delete user (admin & super_admin only)
 @router.delete("/{user_id}")

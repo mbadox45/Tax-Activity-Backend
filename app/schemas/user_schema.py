@@ -9,10 +9,12 @@ class UserCreate(BaseModel):
     role: Optional[str] = "user"
 
 class UserUpdate(BaseModel):
-    name: str
-    username: str
-    group_id: Optional[int] = None
-    role: Optional[str] = "user"
+    username: Optional[str] = None
+    name: Optional[str] = None
+    role: Optional[str] = None
+    password: Optional[str] = None
+    is_active: Optional[bool] = None  # Tambahkan ini
+    group_id: Optional[int] = None    # Tambahkan ini
 
 class UserLogin(BaseModel):
     username: str
