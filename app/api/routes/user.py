@@ -248,16 +248,16 @@ def update_user(
             code=500
         )
 
-# delete user (admin & super_admin only)
+# delete user (super_admin only)
 @router.delete("/{user_id}")
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if current_user.role not in ["admin", "super_admin"]:
+    if current_user.role != "super_admin":
         return error_response(
-            message="Forbidden: Hanya Admin yang diizinkan",
+            message="Forbidden: Hanya Super Admin yang diizinkan",
             code=403
         )
 
