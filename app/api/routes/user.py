@@ -187,7 +187,7 @@ def get_users(
         message="Success fetch all users"
     )
 
-# update user (admin only)
+# update user (admin & super_admin only) - termasuk update role & group_id
 @router.put("/{user_id}")
 def update_user(
     user_id: int,
@@ -195,7 +195,7 @@ def update_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if current_user.role != "admin":
+    if current_user.role not in ["admin", "super_admin"]:
         return error_response(
             message="Forbidden: Hanya Admin yang diizinkan",
             code=403
