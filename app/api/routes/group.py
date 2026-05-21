@@ -41,7 +41,7 @@ def get_group_tree(db: Session = Depends(get_db)):
     except Exception as e:
         return error_response(
             message=f"Gagal mengambil struktur group: {str(e)}", 
-            status_code=500
+            code=500
         )
 
 # =========================================================================
@@ -60,7 +60,7 @@ def get_all_groups(db: Session = Depends(get_db)):
     except Exception as e:
         return error_response(
             message=f"Gagal mengambil daftar group: {str(e)}", 
-            status_code=500
+            code=500
         )
 
 # =========================================================================
