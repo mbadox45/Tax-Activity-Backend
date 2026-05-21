@@ -8,6 +8,12 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=6, max_length=72)
     role: Optional[str] = "user"
 
+class UserUpdate(BaseModel):
+    name: str
+    username: str
+    group_id: Optional[int] = None
+    role: Optional[str] = "user"
+
 class UserLogin(BaseModel):
     username: str
     password: str

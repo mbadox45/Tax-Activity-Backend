@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.user_model import User
-from app.schemas.user_schema import UserCreate, UserLogin, UserResponse, ChangePasswordRequest, AdminResetPasswordRequest
+from app.schemas.user_schema import UserCreate, UserLogin, UserResponse, ChangePasswordRequest, AdminResetPasswordRequest, UserUpdate
 from app.core.response import success_response, error_response
 from app.core.base_response import BaseResponse
 from app.core.security import hash_password, verify_password, create_access_token
@@ -191,17 +191,25 @@ def get_users(
 @router.put("/{user_id}")
 def update_user(
     user_id: int,
-    payload: UserCreate,
+    payload: UserUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Forbidden")
+        return error_response(
+            data=None,
+            message="Forbidden: Hanya Admin yang diizinkan",
+            code=403
+        )
 
     user = db.query(User).filter(User.id == user_id).first()
 
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        return error_response(
+            data=None,
+            message="User tidak ditemukan",
+            code=404
+        )
 
     user.username = payload.username
     user.name = payload.name
