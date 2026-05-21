@@ -31,17 +31,32 @@ def get_group_tree(db: Session = Depends(get_db)):
     Mengambil semua group utama beserta sub-group di dalamnya secara terstruktur.
     """
     try:
+        # 1. Ambil semua Group Utama yang tidak memiliki parent (Akar Hierarki)
         parent_groups = db.query(Group).filter(Group.parent_id == None).all()
         
-        # Lakukan validasi manual/parsing ke schema sebelum dibungkus ke success_response jika diperlukan
-        # Namun SQLAlchemy lazily memuat relasi, jadi bisa langsung dilempar ke data jika skema ORM aktif
-        data = [GroupTreeResponse.model_validate(g).model_dump() for g in parent_groups]
+        # 2. Fungsi pembantu untuk merubah struktur objek ORM menjadi Dictionary secara rekursif
+        def format_group_node(group_obj: Group) -> dict:
+            return {
+                "id": group_obj.id,
+                "name": group_obj.name,
+                "is_active": group_obj.is_active,
+                "parent_id": group_obj.parent_id,
+                # Rekursif panggil dirinya sendiri untuk mengonversi seluruh sub-group di bawahnya
+                "sub_groups": [format_group_node(sub) for sub in group_obj.sub_groups]
+            }
         
-        return success_response(data=data, message="Berhasil mengambil struktur hierarki group")
+        # 3. Eksekusi semua data utama
+        data = [format_group_node(g) for g in parent_groups]
+        
+        return success_response(
+            data=data, 
+            message="Berhasil mengambil struktur hierarki group"
+        )
+        
     except Exception as e:
         return error_response(
             message=f"Gagal mengambil struktur group: {str(e)}", 
-            code=500
+            code=500  # Sesuaikan dengan nama argumen response helper Anda (code / status_code)
         )
 
 # =========================================================================
