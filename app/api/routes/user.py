@@ -1,3 +1,4 @@
+# app/api/routes/user.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -19,11 +20,15 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Username already exists")
 
+    # 🔑 Logika Default Password jika kosong atau tidak diisi oleh admin
+    raw_password = payload.password if payload.password else "123456"
+
     user = User(
         name=payload.name,
         username=payload.username,
-        password=hash_password(payload.password),
-        role=payload.role
+        password=hash_password(raw_password), # Di-hash dengan aman
+        role=payload.role,
+        group_id=getattr(payload, 'group_id', None) # Ambil group_id jika ada di skema
     )
 
     db.add(user)
@@ -33,7 +38,7 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     return {
         "code": 200,
         "status": True,
-        "message": "User berhasil dibuat",
+        "message": f"User berhasil dibuat dengan password: {raw_password}",
         "data": {
             "id": user.id,
             "username": user.username,
@@ -41,6 +46,66 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
             "is_active": user.is_active
         }
     }
+
+# Change Password
+@router.post("/change-password")
+def change_password(
+    payload: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Endpoint khusus untuk user yang sedang login agar bisa mengganti password-nya sendiri.
+    """
+    # 1. Validasi password lama apakah cocok
+    if not verify_password(payload.old_password, current_user.password):
+        raise HTTPException(status_code=400, detail="Password lama yang Anda masukkan salah")
+
+    # 2. Update password baru (di-hash)
+    current_user.password = hash_password(payload.new_password)
+    db.commit()
+
+    return success_response(
+        data=None,
+        message="Password Anda berhasil diperbarui"
+    )
+
+# Reset Password
+@router.post("/{user_id}/reset-password")
+def admin_reset_password(
+    user_id: int,
+    payload: AdminResetPasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Endpoint khusus Admin & Superadmin untuk mereset password user lain kembali ke default '123456'.
+    """
+    # 1. Validasi Hak Akses Role
+    if current_user.role not in ["admin", "super_admin"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Hanya Admin atau Superadmin yang diizinkan")
+
+    # 2. Cari target user yang mau direset
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan")
+
+    # 3. Proteksi Tingkat Role: Admin biasa tidak boleh mereset password seorang Superadmin
+    if current_user.role == "admin" and target_user.role == "super_admin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin tidak dapat mereset password Superadmin")
+
+    # 4. Eksekusi Reset Password (jika payload kosong, otomatis default ke "123456")
+    target_user.password = hash_password(payload.password)
+    db.commit()
+
+    return success_response(
+        data={
+            "user_id": target_user.id,
+            "username": target_user.username,
+            "reset_to": payload.password
+        },
+        message=f"Password untuk user {target_user.username} berhasil direset"
+    )
 
 # Login
 @router.post("/login")
