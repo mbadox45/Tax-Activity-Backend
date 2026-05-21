@@ -1,7 +1,7 @@
 # app/models/group_model.py
 
 from sqlalchemy import Column, Integer, String, ForeignKey, Table, Boolean
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from app.db.base import Base  # Sesuaikan dengan base class Anda
 
 # =========================================================================
@@ -26,9 +26,8 @@ class Group(Base):
 
     # 🔴 PERBAIKAN: Hapus kondisi 'if parent_id' karena SQLAlchemy mengurusnya secara internal
     sub_groups = relationship(
-        "Group", 
-        backref="parent", 
-        remote_side=[id],
+        "Group",
+        backref=backref("parent", remote_side=[id]), # 🔥 Sekarang arahnya sudah benar
         cascade="all, delete-orphan",
         single_parent=True
     )
