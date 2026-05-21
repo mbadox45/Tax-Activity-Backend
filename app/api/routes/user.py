@@ -27,12 +27,13 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     # 🔑 Logika Default Password jika kosong atau tidak diisi oleh admin
     raw_password = payload.password if payload.password else "123456"
 
+    # 🛠️ PERBAIKAN: Panggil payload.group_id secara langsung
     user = User(
         name=payload.name,
         username=payload.username,
-        password=hash_password(raw_password), # Di-hash dengan aman
+        password=hash_password(raw_password),
         role=payload.role,
-        group_id=getattr(payload, 'group_id', None) # Ambil group_id jika ada di skema
+        group_id=payload.group_id # 🔥 Jauh lebih aman dan langsung terbaca oleh SQLAlchemy
     )
 
     db.add(user)
@@ -44,7 +45,9 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
             "id": user.id,
             "username": user.username,
             "role": user.role,
-            "is_active": user.is_active
+            "is_active": user.is_active,
+            "group_id": user.group_id, # Tambahkan ini juga di response agar frontend tahu datanya masuk
+            "group_name": user.group.name if user.group else None
         },
         message=f"User berhasil dibuat dengan password: {raw_password}"
     )
