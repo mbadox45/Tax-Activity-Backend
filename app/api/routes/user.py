@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.user_model import User
-from app.schemas.user_schema import UserCreate, UserLogin, UserResponse
+from app.schemas.user_schema import UserCreate, UserLogin, UserResponse, ChangePasswordRequest, AdminResetPasswordRequest
 from app.core.response import success_response, error_response
 from app.core.base_response import BaseResponse
 from app.core.security import hash_password, verify_password, create_access_token
