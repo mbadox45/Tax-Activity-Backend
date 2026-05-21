@@ -1,7 +1,7 @@
 # app/api/routes/group.py
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 
 from app.db.session import SessionLocal
@@ -28,27 +28,29 @@ def get_db():
 @router.get("/tree")
 def get_group_tree(db: Session = Depends(get_db)):
     """
-    Mengambil semua group utama beserta sub-group di dalamnya secara terstruktur.
+    Mengambil semua group utama beserta sub-group di dalamnya secara terukuran dan mendalam.
     """
     try:
-        # 1. Ambil semua Group Utama yang tidak memiliki parent
-        parent_groups = db.query(Group).filter(Group.parent_id == None).all()
+        # 1. Paksa SQLAlchemy mengambil data sub_groups sekaligus menggunakan joinedload
+        parent_groups = (
+            db.query(Group)
+            .options(joinedload(Group.sub_groups)) # 🔥 Memaksa pengambilan relasi sub_group secara instan
+            .filter(Group.parent_id == None)
+            .all()
+        )
         
-        # 2. Fungsi pembantu dengan proteksi 'or []' jika sub_groups bernilai None
+        # 2. Fungsi pembantu rekursif
         def format_group_node(group_obj: Group) -> dict:
-            # Proteksi: Pastikan jika sub_groups None, ganti menjadi list kosong []
-            current_sub_groups = group_obj.sub_groups or []
-            
             return {
                 "id": group_obj.id,
                 "name": group_obj.name,
                 "is_active": group_obj.is_active,
                 "parent_id": group_obj.parent_id,
-                # Lakukan iterasi dengan aman menggunakan list terproteksi
-                "sub_groups": [format_group_node(sub) for sub in current_sub_groups]
+                # Jalankan rekursi dengan aman karena datanya dipastikan sudah ter-load dari database
+                "sub_groups": [format_group_node(sub) for sub in (group_obj.sub_groups or [])]
             }
         
-        # 3. Eksekusi parsing data
+        # 3. Eksekusi transformasi data
         data = [format_group_node(g) for g in parent_groups]
         
         return success_response(
