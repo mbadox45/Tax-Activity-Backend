@@ -442,14 +442,14 @@ def bulk_share_documents(
     ).all()
 
     if not documents:
-        return error_response(message="Dokumen tidak ditemukan atau Anda bukan pemilik dokumen", status_code=status.HTTP_404_NOT_FOUND)
+        return error_response(message="Dokumen tidak ditemukan atau Anda bukan pemilik dokumen", code=404)
 
     # 2. Jika statusnya MEMBAGIKAN, siapkan objek group berdasarkan list group_ids dari payload
     target_groups = []
     if payload.is_shared and payload.group_ids:
         target_groups = db.query(Group).filter(Group.id.in_(payload.group_ids)).all()
         if not target_groups and not payload.share_with_all:
-            return error_response(message="Group yang dipilih tidak valid", status_code=status.HTTP_400_BAD_REQUEST)
+            return error_response(message="Group yang dipilih tidak valid", code=400)
 
     try:
         # 3. Proses setiap dokumen yang dipilih menggunakan fungsi rekursif
@@ -475,7 +475,7 @@ def bulk_share_documents(
         db.rollback()
         return error_response(
             message=f"Gagal mengubah status sharing: {str(e)}", 
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            code=500
         )
 
 # 🔹 GET ALL SHARED DOCUMENTS (Public/Shared Files)
