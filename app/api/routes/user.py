@@ -197,7 +197,6 @@ def update_user(
 ):
     if current_user.role != "admin":
         return error_response(
-            data=None,
             message="Forbidden: Hanya Admin yang diizinkan",
             code=403
         )
@@ -206,7 +205,6 @@ def update_user(
 
     if not user:
         return error_response(
-            data=None,
             message="User tidak ditemukan",
             code=404
         )
