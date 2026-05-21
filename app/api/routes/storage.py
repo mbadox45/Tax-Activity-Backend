@@ -16,8 +16,13 @@ router = APIRouter(prefix="/storage", tags=["Storage Management"])
 @router.get("/users")
 def get_all_users_storage(
     db: Session = Depends(get_db),
-    current_admin = Depends(get_current_user) # Hanya bisa diakses admin
+    current_admin = Depends(get_current_user) # Hanya bisa diakses super_admin
 ):
+    if current_admin.role != "super_admin":
+        return error_response(
+            message="Forbidden: Hanya Super Admin yang diizinkan",
+            code=403
+        )
     # 1. Subquery untuk menghitung total pemakaian per user secara efisien
     usage_subquery = (
         db.query(
@@ -48,7 +53,7 @@ def get_all_users_storage(
     storage_list = []
     for r in results:
         used_bytes = r.used_storage or 0
-        max_bytes = r.max_storage or 104857600  # Default 100MB jika belum ada record di UserStorage
+        max_bytes = r.max_storage or 500 * 1024 * 1024 * 1024  # Default 500GB jika belum ada record di UserStorage
         
         storage_list.append({
             "user_id": r.id,
