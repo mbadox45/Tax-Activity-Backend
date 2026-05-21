@@ -9,4 +9,4 @@ class StorageResponse(BaseModel):
 
 class StorageUpdateRequest(BaseModel):
     user_id: int
-    additional_storage_mb: int # Jumlah MB yang ingin ditambahkan
+    additional_storage_gb: int # Jumlah MB yang ingin ditambahkan

@@ -16,7 +16,7 @@ router = APIRouter(prefix="/storage", tags=["Storage Management"])
 @router.get("/users")
 def get_all_users_storage(
     db: Session = Depends(get_db),
-    current_admin = Depends(is_admin) # Hanya bisa diakses admin
+    current_admin = Depends(get_current_user) # Hanya bisa diakses admin
 ):
     # 1. Subquery untuk menghitung total pemakaian per user secara efisien
     usage_subquery = (
@@ -99,18 +99,25 @@ def get_my_storage(db: Session = Depends(get_db), current_user = Depends(get_cur
 def add_user_quota(
     payload: StorageUpdateRequest, 
     db: Session = Depends(get_db), 
-    current_admin = Depends(is_admin)
+    current_admin = Depends(get_current_user)
 ):
+    
+    if current_admin.role != "super_admin":
+        return error_response(
+            message="Forbidden: Hanya Super Admin yang diizinkan",
+            code=403
+        )
+    
     storage = db.query(UserStorage).filter(UserStorage.user_id == payload.user_id).first()
     
     # Perbaikan: Jika admin mau tambah kuota tapi user belum punya record storage, otomatis buatkan baru
     if not storage:
-        storage = UserStorage(user_id=payload.user_id, max_storage=104857600) # Mulai dari default 100MB
+        storage = UserStorage(user_id=payload.user_id, max_storage=500 * 1024 * 1024 * 1024) # Mulai dari default 500GB
         db.add(storage)
 
-    # Konversi MB ke Bytes
-    additional_bytes = payload.additional_storage_mb * 1024 * 1024
+    # Konversi GB ke Bytes
+    additional_bytes = payload.additional_storage_gb * 1024 * 1024 * 1024
     storage.max_storage += additional_bytes
     
     db.commit()
-    return success_response(message=f"Berhasil menambah {payload.additional_storage_mb}MB ke User {payload.user_id}")
+    return success_response(message=f"Berhasil menambah {payload.additional_storage_gb}GB ke User {payload.user_id}")
