@@ -229,20 +229,26 @@ def update_user(
         message="User updated"
     )
 
-# delete user (admin only)
+# delete user (admin & super_admin only)
 @router.delete("/{user_id}")
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Forbidden")
+    if current_user.role not in ["admin", "super_admin"]:
+        return error_response(
+            message="Forbidden: Hanya Admin yang diizinkan",
+            code=403
+        )
 
     user = db.query(User).filter(User.id == user_id).first()
 
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        return error_response(
+            message="User tidak ditemukan",
+            code=404
+        )
 
     db.delete(user)
     db.commit()
