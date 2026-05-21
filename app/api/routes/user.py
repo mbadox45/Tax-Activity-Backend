@@ -18,7 +18,11 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.username == payload.username).first()
 
     if existing:
-        raise HTTPException(status_code=400, detail="Username already exists")
+        return error_response(
+            data=None,
+            message="Username already exists",
+            code=400
+        )
 
     # 🔑 Logika Default Password jika kosong atau tidak diisi oleh admin
     raw_password = payload.password if payload.password else "123456"
@@ -35,17 +39,15 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    return {
-        "code": 200,
-        "status": True,
-        "message": f"User berhasil dibuat dengan password: {raw_password}",
-        "data": {
+    return success_response(
+        data={  
             "id": user.id,
             "username": user.username,
             "role": user.role,
             "is_active": user.is_active
-        }
-    }
+        },
+        message=f"User berhasil dibuat dengan password: {raw_password}"
+    )
 
 # Change Password
 @router.post("/change-password")
