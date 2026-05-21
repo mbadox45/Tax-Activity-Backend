@@ -53,7 +53,7 @@ def get_all_users_storage(
     storage_list = []
     for r in results:
         used_bytes = r.used_storage or 0
-        max_bytes = r.max_storage or 500 * 1024 * 1024 * 1024  # Default 500GB jika belum ada record di UserStorage
+        max_bytes = r.max_storage or 512 * 1024 * 1024 * 1024  # Default 512GB jika belum ada record di UserStorage
         
         storage_list.append({
             "user_id": r.id,
@@ -87,7 +87,7 @@ def get_my_storage(db: Session = Depends(get_db), current_user = Depends(get_cur
     ).scalar()
 
     used_bytes = total_used or 0
-    max_bytes = storage.max_storage or 104857600 
+    max_bytes = storage.max_storage or 512 * 1024 * 1024 * 1024  # Default 512GB jika belum ada record di UserStorage
     
     result = {
         "user_id": storage.user_id,
