@@ -31,21 +31,24 @@ def get_group_tree(db: Session = Depends(get_db)):
     Mengambil semua group utama beserta sub-group di dalamnya secara terstruktur.
     """
     try:
-        # 1. Ambil semua Group Utama yang tidak memiliki parent (Akar Hierarki)
+        # 1. Ambil semua Group Utama yang tidak memiliki parent
         parent_groups = db.query(Group).filter(Group.parent_id == None).all()
         
-        # 2. Fungsi pembantu untuk merubah struktur objek ORM menjadi Dictionary secara rekursif
+        # 2. Fungsi pembantu dengan proteksi 'or []' jika sub_groups bernilai None
         def format_group_node(group_obj: Group) -> dict:
+            # Proteksi: Pastikan jika sub_groups None, ganti menjadi list kosong []
+            current_sub_groups = group_obj.sub_groups or []
+            
             return {
                 "id": group_obj.id,
                 "name": group_obj.name,
                 "is_active": group_obj.is_active,
                 "parent_id": group_obj.parent_id,
-                # Rekursif panggil dirinya sendiri untuk mengonversi seluruh sub-group di bawahnya
-                "sub_groups": [format_group_node(sub) for sub in group_obj.sub_groups]
+                # Lakukan iterasi dengan aman menggunakan list terproteksi
+                "sub_groups": [format_group_node(sub) for sub in current_sub_groups]
             }
         
-        # 3. Eksekusi semua data utama
+        # 3. Eksekusi parsing data
         data = [format_group_node(g) for g in parent_groups]
         
         return success_response(
@@ -56,7 +59,7 @@ def get_group_tree(db: Session = Depends(get_db)):
     except Exception as e:
         return error_response(
             message=f"Gagal mengambil struktur group: {str(e)}", 
-            code=500  # Sesuaikan dengan nama argumen response helper Anda (code / status_code)
+            code=500
         )
 
 # =========================================================================
