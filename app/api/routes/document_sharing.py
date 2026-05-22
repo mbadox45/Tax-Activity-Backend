@@ -25,28 +25,28 @@ def get_db():
 # =========================================================================
 @router.get("/shared")
 def load_shared_documents(
-    parent_id: Optional[int] = None, # 📂 Tambahkan filter parent_id untuk mendukung navigasi masuk ke dalam folder
+    parent_id: Optional[int] = None, # 📂 Filter untuk navigasi masuk-keluar folder
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Mengambil semua dokumen (Milik Sendiri & Shared) yang berhak diakses oleh user saat ini,
-    dikelompokkan berdasarkan struktur Folder dan File agar sama persis dengan sistem Load Document utama.
+    dikelompokkan berdasarkan struktur Folder dan File agar sesuai dengan sistem Load Document utama.
     """
     try:
-        # 1. Ambil query dasar dokumen yang berhak diakses dari fungsi keamanan terpusat
-        # Pastikan fungsi get_accessible_documents Anda mengembalikan objek Query (belum di-.all())
-        query = get_accessible_documents(db=db, current_user=current_user)
+        # 1. Ambil data list dokumen yang berhak diakses dari fungsi keamanan
+        all_documents = get_accessible_documents(db=db, current_user=current_user)
         
-        # 2. Filter berdasarkan parent_id (posisi folder saat ini) agar user bisa masuk-keluar folder shared
-        query = query.filter(query.model_dict['model'].parent_id == parent_id) if hasattr(query, 'model_dict') else query.filter(query.column_descriptions[0]['expr'].parent_id == parent_id)
+        # 2. Lakukan filtering berbasis Python List (mengatasi error 'list' object has no attribute 'filter')
+        # Kita hanya mengambil dokumen yang parent_id-nya cocok dengan posisi navigasi user saat ini
+        filtered_documents = [
+            doc for doc in all_documents 
+            if doc.parent_id == parent_id
+        ]
         
-        # Eksekusi query ke database
-        documents = query.all()
-        
-        # 3. Pisahkan antara Folders dan Files agar struktur datanya rapi dan mudah dirender oleh frontend ArdiarTax
-        folders = [doc for doc in documents if doc.is_folder]
-        files = [doc for doc in documents if not doc.is_folder]
+        # 3. Pisahkan hasil filter ke dalam kelompok Folders dan Files
+        folders = [doc for doc in filtered_documents if doc.is_folder]
+        files = [doc for doc in filtered_documents if not doc.is_folder]
         
         # 4. Kemas response agar identik dengan struktur load_documents bawaan Anda
         result_data = {
