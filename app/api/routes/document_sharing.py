@@ -24,7 +24,7 @@ def get_db():
 # =========================================================================
 # ROUTE: Load Accessible Documents (Owned & Shared)
 # =========================================================================
-@router.get("/shared", response_model=List[DocumentResponse])
+@router.get("/shared")
 def load_shared_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -36,7 +36,12 @@ def load_shared_documents(
     try:
         # Jalankan fungsi filter query berdasarkan hak akses user saat ini
         documents = get_accessible_documents(db=db, current_user=current_user)
+        
+        # Karena success_response mengembalikan dict, FastAPI sekarang bebas merendernya tanpa komplain
         return success_response(data=documents, message="Dokumen berhasil dimuat.")
         
     except Exception as e:
-        return error_response(message=f"Terjadi kesalahan saat memuat dokumen: {str(e)}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return error_response(
+            message=f"Terjadi kesalahan saat memuat dokumen: {str(e)}", 
+            code=500
+        )
