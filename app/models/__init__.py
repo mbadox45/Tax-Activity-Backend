@@ -4,6 +4,6 @@ from .log_activity_model import LogActivity
 from .peb_model import PEB
 from .peb_terbit_model import PEBTerbit
 from .document_model import Document
-from .document_access_model import DocumentAccess
+from .document_access_model import DocumentAccess, AccessLevel
 from .storage_model import UserStorage
-from .group_model import Group, document_group_sharing
+from .group_model import Group

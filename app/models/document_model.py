@@ -3,7 +3,6 @@ from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.base import Base
-from app.models.group_model import document_group_sharing
 
 class Document(Base):
     __tablename__ = "documents"
@@ -12,12 +11,12 @@ class Document(Base):
     name = Column(String(255), nullable=False)
     is_folder = Column(Boolean, default=False)
     
-    # Kategori Sharing yang Anda minta
+    # Kategori Sharing
     is_shared = Column(Boolean, default=False) 
     
     # File metadata (Null jika ini adalah folder)
     file_path = Column(String(500), nullable=True)
-    file_type = Column(String(50), nullable=True) # e.g., 'pdf', 'docx', 'folder'
+    file_type = Column(String(50), nullable=True) # e.g., 'pdf', 'docx'
     file_size = Column(Integer, nullable=True) # dalam bytes
 
     # Hierarki Folder (Self-Referencing)
@@ -28,12 +27,20 @@ class Document(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relations
+    # =========================================================================
+    # ORM RELATIONSHIPS
+    # =========================================================================
+    
+    # Hubungan ke Pemilik Dokumen (User)
     owner = relationship("User", back_populates="documents")
+    
+    # Hubungan Struktur Folder (Parent-Child)
     children = relationship("Document", backref="parent", remote_side=[id])
-    shared_with = relationship("DocumentAccess", back_populates="document", cascade="all, delete-orphan")
-    shared_with_groups = relationship(
-        "Group",
-        secondary=document_group_sharing,
-        back_populates="shared_documents"
+    
+    # 🔥 PUSAT OTORISASI: Jembatan menuju Group & Hak Aksesnya
+    # Melalui relasi ini, kita bisa tahu Group mana saja yang membaca file ini
+    shared_with = relationship(
+        "DocumentAccess", 
+        back_populates="document", 
+        cascade="all, delete-orphan"
     )

@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, ForeignKey, String, Boolean, Enum
+# app/models/document_access_model.py
+from sqlalchemy import Column, Integer, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 import enum
 from app.db.base import Base
@@ -13,11 +14,11 @@ class DocumentAccess(Base):
     id = Column(Integer, primary_key=True, index=True)
     document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"))
     
-    # Jika user_id NULL, berarti ini akses "All Users" (Public)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    # Target sharing berbasis Group (NULL berarti Public / Semua User)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=True)
     
     access_level = Column(Enum(AccessLevel), default=AccessLevel.VIEWER)
 
-    # Relationships
+    # Relationships (Menghubungkan ke Document dan Group)
     document = relationship("Document", back_populates="shared_with")
-    user = relationship("User", back_populates="shared_documents")
+    group = relationship("Group", back_populates="shared_documents")

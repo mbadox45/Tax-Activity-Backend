@@ -49,12 +49,6 @@ class User(Base):
         cascade="all, delete-orphan"
     )
 
-    shared_documents = relationship(
-        "DocumentAccess",
-        back_populates="user",
-        cascade="all, delete-orphan"
-    )
-
     storage = relationship(
         "UserStorage",
         back_populates="user",

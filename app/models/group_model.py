@@ -1,18 +1,7 @@
 # app/models/group_model.py
-
-from sqlalchemy import Column, Integer, String, ForeignKey, Table, Boolean
+from sqlalchemy import Column, Integer, String, ForeignKey, Boolean
 from sqlalchemy.orm import relationship, backref
-from app.db.base import Base  # Sesuaikan dengan base class Anda
-
-# =========================================================================
-# TABEL RELASI (Association Table) untuk Sharing Dokumen ke Group/Sub-Group
-# =========================================================================
-document_group_sharing = Table(
-    "document_group_sharing",
-    Base.metadata,
-    Column("document_id", Integer, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True),
-    Column("group_id", Integer, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True)
-)
+from app.db.base import Base
 
 class Group(Base):
     __tablename__ = "groups"
@@ -24,20 +13,20 @@ class Group(Base):
     # Hierarki: Self-referential untuk Sub-Group
     parent_id = Column(Integer, ForeignKey("groups.id", ondelete="RESTRICT"), nullable=True)
 
-    # 🔴 PERBAIKAN: Hapus kondisi 'if parent_id' karena SQLAlchemy mengurusnya secara internal
+    # Relasi Hierarki Internal
     sub_groups = relationship(
         "Group",
-        backref=backref("parent", remote_side=[id]), # 🔥 Sekarang arahnya sudah benar
+        backref=backref("parent", remote_side=[id]),
         cascade="all, delete-orphan",
         single_parent=True
     )
 
-    # Relasi ORM ke User (Satu Group/Sub-Group bisa memiliki banyak anggota User)
+    # Relasi ke User (Anggota di dalam grup ini)
     users = relationship("User", back_populates="group")
 
-    # Relasi ORM ke Dokumen yang dibagikan ke Group ini
+    # 🔥 RELASI KE AKSES DOKUMEN: Berpasangan dengan 'group' di DocumentAccess
     shared_documents = relationship(
-        "Document",
-        secondary=document_group_sharing,
-        back_populates="shared_with_groups"
+        "DocumentAccess",
+        back_populates="group",
+        cascade="all, delete-orphan"
     )
