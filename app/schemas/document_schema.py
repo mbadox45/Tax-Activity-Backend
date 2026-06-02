@@ -67,9 +67,9 @@ class BulkShareRequest(BaseModel):
 # 🔥 TAMBAHAN BARU: SKEMA UNTUK ROUTE SHARE TERPADU (UNIFIED SHARE)
 # =========================================================================
 
-class UnifiedMemberShare(BaseModel):
+class GroupShareItem(BaseModel):
     """Skema untuk mendefinisikan user spesifik beserta level hak aksesnya"""
-    user_id: int
+    id: int
     access_level: AccessLevel = AccessLevel.VIEWER
 
 class UnifiedShareRequest(BaseModel):
@@ -87,4 +87,4 @@ class UnifiedShareRequest(BaseModel):
     share_with_all: bool = False  
     
     # Opsi Target 2: Berdasarkan Group / Sub-group (Menggunakan ID Group)
-    group_ids: Optional[List[int]] = []  
+    group_ids: List[GroupShareItem] = []  # List ID Group/Sub-group yang diberikan akses  

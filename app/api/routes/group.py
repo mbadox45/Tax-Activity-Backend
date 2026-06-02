@@ -86,7 +86,7 @@ def get_all_groups(db: Session = Depends(get_db)):
 # =========================================================================
 # 3. ENDPOINT: Tambah Group atau Sub-Group Baru
 # =========================================================================
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("/")
 def create_group(
     payload: GroupCreate, 
     db: Session = Depends(get_db),
@@ -94,18 +94,18 @@ def create_group(
 ):
     # Proteksi: Hanya super_admin yang boleh membuat group
     if current_user.role != "super_admin":
-        return error_response(message="Akses ditolak. Anda bukan Super Admin.", status_code=403)
+        return error_response(message="Akses ditolak. Anda bukan Super Admin.", code=403)
 
     # Validasi duplikasi nama group
     existing_group = db.query(Group).filter(Group.name == payload.name).first()
     if existing_group:
-        return error_response(message="Nama Group/Sub-Group sudah digunakan", status_code=400)
+        return error_response(message="Nama Group/Sub-Group sudah digunakan", code=400)
 
     # Jika membuat sub-group, pastikan parent_id nya ada di database
     if payload.parent_id:
         parent = db.query(Group).filter(Group.id == payload.parent_id).first()
         if not parent:
-            return error_response(message="Parent Group tidak ditemukan", status_code=404)
+            return error_response(message="Parent Group tidak ditemukan", code=404)
 
     try:
         new_group = Group(
@@ -120,7 +120,7 @@ def create_group(
         return success_response(data=data, message="Group/Sub-Group berhasil ditambahkan")
     except Exception as e:
         db.rollback()
-        return error_response(message=f"Gagal membuat group: {str(e)}", status_code=500)
+        return error_response(message=f"Gagal membuat group: {str(e)}", code=500)
 
 # =========================================================================
 # 4. ENDPOINT: Update Group / Sub-Group
@@ -133,11 +133,11 @@ def update_group(
     current_user: User = Depends(get_current_user)
 ):
     if current_user.role != "super_admin":
-        return error_response(message="Akses ditolak.", status_code=403)
+        return error_response(message="Akses ditolak.", code=403)
 
     group = db.query(Group).filter(Group.id == group_id).first()
     if not group:
-        return error_response(message="Group tidak ditemukan", status_code=404)
+        return error_response(message="Group tidak ditemukan", code=404)
 
     # Update field jika dikirim di payload
     if payload.name is not None:
@@ -146,7 +146,7 @@ def update_group(
         group.is_active = payload.is_active
     if payload.parent_id is not None:
         if payload.parent_id == group.id:
-            return error_response(message="Group tidak bisa menjadi parent dari dirinya sendiri", status_code=404)
+            return error_response(message="Group tidak bisa menjadi parent dari dirinya sendiri", code=404)
         group.parent_id = payload.parent_id
 
     try:
@@ -156,7 +156,7 @@ def update_group(
         return success_response(data=data, message="Group berhasil diperbarui")
     except Exception as e:
         db.rollback()
-        return error_response(message=f"Gagal memperbarui group: {str(e)}", status_code=500)
+        return error_response(message=f"Gagal memperbarui group: {str(e)}", code=500)
 
 # =========================================================================
 # 5. ENDPOINT: Hapus Group / Sub-Group
@@ -168,11 +168,11 @@ def delete_group(
     current_user: User = Depends(get_current_user)
 ):
     if current_user.role != "super_admin":
-        return error_response(message="Akses ditolak.", status_code=403)
+        return error_response(message="Akses ditolak.", code=403)
 
     group = db.query(Group).filter(Group.id == group_id).first()
     if not group:
-        return error_response(message="Group tidak ditemukan", status_code=404)
+        return error_response(message="Group tidak ditemukan", code=404)
 
     try:
         db.delete(group)
@@ -182,5 +182,5 @@ def delete_group(
         db.rollback()
         return error_response(
             message="Gagal menghapus. Pastikan hapus semua Sub-Group di bawahnya terlebih dahulu.", 
-            status_code=400
+            code=400
         )
