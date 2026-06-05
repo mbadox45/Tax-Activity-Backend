@@ -8,6 +8,7 @@ from app.db.base import Base
 from app.db.seed import run_seed
 # API router
 # from app.api.routes_peb import router as peb_router
+from app.api.routes.dashboard import router as dashboard_router
 from app.api.routes.user import router as user_router
 from app.api.routes.activity import router as activity_router
 from app.api.routes.peb import router as peb_router
@@ -65,6 +66,7 @@ async def read_root():
 # =============================
 # REGISTER ROUTES
 # =============================
+api_router.include_router(dashboard_router)
 api_router.include_router(user_router)
 api_router.include_router(activity_router)
 # api_router.include_router(peb_router, prefix="/peb", tags=["PEB"])
