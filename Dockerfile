@@ -1,43 +1,49 @@
-# Gunakan image Python resmi
-FROM python:3.13-slim
+# ==========================================
+# STAGE 1: Builder (Proses Install Dependencies)
+# ==========================================
+FROM python:3.13-slim AS builder
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    python3-dev \
-    # Library untuk WeasyPrint (Sudah diperbaiki namanya)
-    libcairo2 \
-    libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libgdk-pixbuf-2.0-0 \
-    shared-mime-info \
-    # Library untuk PostgreSQL & FFI
-    libffi-dev \
-    libpq-dev \
-    # Tambahkan Tesseract OCR (karena ada di .env Anda)
-    tesseract-ocr \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set working directory
 WORKDIR /app
 
-# Install python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install package system yang dibutuhkan untuk compile (jika ada library C)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy seluruh project
+# Copy file requirements saja terlebih dahulu agar memanfaatkan cache Docker
+COPY requirements.txt .
+
+# Install dependencies ke dalam folder lokal .venv
+RUN python -m venv /app/.venv && \
+    /app/.venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /app/.venv/bin/pip install --no-cache-dir -r requirements.txt
+
+
+# ==========================================
+# STAGE 2: Runtime (Image Akhir yang Ringan)
+# ==========================================
+FROM python:3.13-slim AS runtime
+
+WORKDIR /app
+
+# Install runtime library untuk PostgreSQL (libpq) yang dibutuhkan aplikasi
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Salin virtual environment (.venv) hasil compile dari stage builder
+COPY --from=builder /app/.venv /app/.venv
+
+# Salin seluruh source code project ke dalam container
 COPY . .
 
-# Buat folder uploads dan cache
-RUN mkdir -p uploads/documents uploads/cache_pdf
+# Pastikan environment menggunakan virtual environment yang baru disalin
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
 
-# Port FastAPI
-EXPOSE 8000
+# 🔥 Buka port 3032 untuk FastAPI di dalam container
+EXPOSE 3032
 
-# Jalankan aplikasi
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 🔥 Jalankan Uvicorn dengan mengarahkan port ke 3032
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3032"]
