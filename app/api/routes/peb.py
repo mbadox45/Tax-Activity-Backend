@@ -330,7 +330,7 @@ def bulk_delete_peb(
     current_user: User = Depends(get_current_user)
 ):
     # 1. Cek Role
-    if current_user.role != "admin":
+    if current_user.role != "super_admin" and current_user.role != "admin":
         return error_response("Akses ditolak (admin only)", 403)
 
     # 2. Ambil semua data yang ID-nya ada dalam list
