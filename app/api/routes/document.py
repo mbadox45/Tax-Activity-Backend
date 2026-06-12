@@ -14,6 +14,7 @@ from app.db.session import get_db
 from app.models.storage_model import UserStorage
 from app.models.document_model import Document
 from app.models.group_model import Group
+from app.models.user_model import User
 from app.models.document_access_model import DocumentAccess, AccessLevel
 from app.schemas.document_schema import DocumentCreate, DocumentResponse, DocumentMove, BulkDeleteRequest, BulkMoveRequest, BulkShareRequest, DocumentRename, DocumentShareRequest, BulkShareRequest
 from app.api.deps import get_current_user
@@ -355,19 +356,56 @@ def move_document(
         return error_response(message=f"Gagal memindahkan: {str(e)}", code=500)
 
 # 🔹 BULK MOVE DOCUMENTS (Fixed Version)
+def sync_document_permissions_recursive(db: Session, doc: Document, target_folder: Optional[Document]):
+    """
+    Fungsi internal untuk menyelaraskan status 'is_shared', 'share_with_all', 
+    dan records tabel DocumentAccess mengikuti Folder Tujuan baru secara berantai (rekursif).
+    """
+    # 1. Bersihkan semua hak akses grup yang lama pada dokumen ini
+    db.query(DocumentAccess).filter(DocumentAccess.document_id == doc.id).delete()
+
+    # KONDISI A: Dipindahkan ke FOLDER YANG MEMILIKI SHARING AKSES
+    if target_folder and target_folder.is_shared:
+        doc.is_shared = True
+        doc.share_with_all = target_folder.share_with_all
+
+        # Ambil semua cetak biru hak akses grup dari folder tujuan
+        target_accesses = db.query(DocumentAccess).filter(DocumentAccess.document_id == target_folder.id).all()
+        
+        # Duplikat hak akses tersebut ke dokumen yang baru dipindahkan ini
+        for access in target_accesses:
+            new_access = DocumentAccess(
+                document_id=doc.id,
+                group_id=access.group_id,
+                access_level=access.access_level
+            )
+            db.add(new_access)
+
+    # KONDISI B: Dipindahkan ke ROOT atau FOLDER PRIVAT (Tidak ada sharing akses)
+    else:
+        doc.is_shared = False
+        doc.share_with_all = False
+        # (Tabel DocumentAccess sudah bersih karena perintah delete di langkah nomor 1)
+
+    # 3. JALANKAN EFEK DOMINO: Jika item yang dipindahkan adalah FOLDER, 
+    # maka seluruh isi sub-folder dan file di dalamnya wajib ikut disinkronkan
+    if doc.is_folder:
+        child_documents = db.query(Document).filter(Document.parent_id == doc.id).all()
+        for child in child_documents:
+            # Operasi rekursif: child menggunakan cetak biru dokumen induknya yang baru (doc)
+            sync_document_permissions_recursive(db=db, doc=child, target_folder=doc)
+
 @router.post("/bulk-move")
 def bulk_move_documents(
     payload: BulkMoveRequest,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
-    # Ambil nilai dari target_folder_id sesuai JSON yang Anda kirim
     raw_target_id = payload.target_folder_id
-    
-    # Logika: Jika 0 atau None maka pindah ke Root
     target_id = None if raw_target_id == 0 or raw_target_id is None else raw_target_id
 
     # 1. Validasi jika pindah ke folder tertentu (bukan root)
+    target_folder = None
     if target_id is not None:
         target_folder = db.query(Document).filter(
             Document.id == target_id,
@@ -378,34 +416,40 @@ def bulk_move_documents(
         if not target_folder:
             return error_response(message=f"Folder tujuan ID {target_id} tidak ditemukan", code=404)
 
-    # 2. Ambil dokumen yang akan dipindahkan
+    # 2. Ambil dokumen-dokumen root yang akan dipindahkan
     documents = db.query(Document).filter(
         Document.id.in_(payload.document_ids),
         Document.user_id == current_user.id
     ).all()
 
     if not documents:
-        return error_response(message="Dokumen tidak ditemukan", code=404)
+        return error_response(message="Tidak ada dokumen valid yang ditemukan untuk dipindahkan", code=404)
 
     try:
         moved_count = 0
         for doc in documents:
-            # Cegah folder pindah ke dirinya sendiri
+            # Cegah folder dipindahkan ke dalam dirinya sendiri
             if doc.is_folder and doc.id == target_id:
                 continue
                 
+            # A. Update lokasi struktur folder (Parent ID)
             doc.parent_id = target_id
             moved_count += 1
+            
+            # B. Jalankan sinkronisasi pewarisan hak akses baru
+            sync_document_permissions_recursive(db=db, doc=doc, target_folder=target_folder)
         
+        # Commit seluruh perubahan struktur dan hak akses sekaligus secara atomik
         db.commit()
         
+        destination_name = "Root" if target_id is None else f"Folder '{target_folder.name}'"
         return success_response(
             data=None,
-            message=f"{moved_count} item berhasil dipindahkan ke {'Root' if target_id is None else 'Folder ID ' + str(target_id)}"
+            message=f"{moved_count} item berhasil dipindahkan ke {destination_name} dan hak akses telah disinkronkan."
         )
     except Exception as e:
         db.rollback()
-        return error_response(message=f"Gagal memindahkan: {str(e)}", code=500)
+        return error_response(message=f"Gagal memindahkan dokumen dan sinkronisasi akses: {str(e)}", code=500)
 
 
 # 🛠️ FUNGSI REKURSIF: Mengupdate Folder beserta seluruh isi file/sub-folder di dalamnya

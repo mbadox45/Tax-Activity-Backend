@@ -43,7 +43,6 @@ class BulkDeleteRequest(BaseModel):
 class BulkMoveRequest(BaseModel):
     document_ids: List[int]
     target_folder_id: Optional[int] = None # Sesuaikan nama field di sini
-    # is_shared: Optional[bool] = None # Tambahkan ini
 
 class DocumentRename(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
@@ -62,3 +61,30 @@ class BulkShareRequest(BaseModel):
     is_shared: bool
     share_with_all: Optional[bool] = False  # True jika ingin dibagikan ke semua user aplikasi
     group_ids: Optional[List[int]] = []     # List ID Group/Sub-Group yang diberikan akses
+
+
+# =========================================================================
+# 🔥 TAMBAHAN BARU: SKEMA UNTUK ROUTE SHARE TERPADU (UNIFIED SHARE)
+# =========================================================================
+
+class GroupShareItem(BaseModel):
+    """Skema untuk mendefinisikan user spesifik beserta level hak aksesnya"""
+    id: int
+    access_level: AccessLevel = AccessLevel.VIEWER
+
+class UnifiedShareRequest(BaseModel):
+    """
+    Satu skema request untuk menghandle semua jenis pembagian dokumen:
+    - Ke Semua Orang (Public)
+    - Ke Group / Sub-group
+    - Ke Spesifik User (Member kustom)
+    - Serta proses Pembatalan Akses (Unshare)
+    """
+    document_ids: List[int]
+    is_shared: bool  # True untuk membagikan, False untuk unshare (tarik akses)
+    
+    # Opsi Target 1: Semua Orang (Public)
+    share_with_all: bool = False  
+    
+    # Opsi Target 2: Berdasarkan Group / Sub-group (Menggunakan ID Group)
+    group_ids: List[GroupShareItem] = []  # List ID Group/Sub-group yang diberikan akses  
