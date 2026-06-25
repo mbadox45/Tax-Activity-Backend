@@ -39,29 +39,5 @@ services:
     depends_on:
       - db
 
-  # 💾 Service 4: Otomatisasi Backup Database (Baru)
-  db-backup:
-    image: prodrigestivanz/postgres-backup-local:15
-    container_name: ardiartax_db_backup
-    restart: always
-    environment:
-      - POSTGRES_HOST=db
-      - POSTGRES_CLUSTER=true
-      - POSTGRES_USER=ardiartax
-      - POSTGRES_PASSWORD=bukankaumdajal666
-      - POSTGRES_DB=ardiartax_db
-      # 🕰️ Jadwal Backup (Menggunakan format CRON). 
-      # "0 0 * * *" artinya backup otomatis setiap hari pada jam 00:00 malam.
-      # Jika ingin coba per jam untuk testing, ganti menjadi: "0 * * * *"
-      - POSTGRES_EXTRA_OPTS=-b -v
-      - SCHEDULE=0 0 * * *
-      # 🕒 Menyimpan histori backup selama 30 hari terakhir (file lama otomatis dihapus agar disk hemat)
-      - BACKUP_KEEP_DAYS=30
-    volumes:
-      # 🔥 BIND MOUNT: Menghubungkan folder lokal ./database ke tempat penyimpanan backup di container
-      - ./database:/backup
-    depends_on:
-      - db
-
 volumes:
   postgres_data:
