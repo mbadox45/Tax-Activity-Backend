@@ -17,7 +17,7 @@ services:
 
   # Service 2: PostgreSQL Database
   db-ardiartax:
-    image: postgres:15-alpine
+    image: postgres:15-slim
     container_name: ardiartax_db
     restart: always
     environment:
