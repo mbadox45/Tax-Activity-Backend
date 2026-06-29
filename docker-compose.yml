@@ -1,7 +1,5 @@
 version: '3.8'
-
 services:
-  # Service 1: Backend FastAPI
   backend-ardiartax:
     build:
       context: .
@@ -13,11 +11,10 @@ services:
       - .env
     restart: always
     depends_on:
-      - db-ardiartax # Memastikan database nyala lebih dulu sebelum backend berjalan
+      - db-ardiartax
 
-  # Service 2: PostgreSQL Database
   db-ardiartax:
-    image: postgres:15-slim
+    image: postgres:15
     container_name: ardiartax_db
     restart: always
     environment:
@@ -25,20 +22,37 @@ services:
       POSTGRES_PASSWORD: bukankaumdajal666
       POSTGRES_DB: ardiartax_db
     ports:
-      - "3030:5432" # Anda tetap bisa remote DB dari DBeaver/Navicat lewat port 3030 Mac Anda
+      - "3030:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  # Service 3: Adminer (Database Web Management)
   adminer-ardiartax:
     image: adminer
     container_name: ardiartax_adminer
     restart: always
     ports:
-      - "3031:8080" # Akses Adminer via browser di port 3031
+      - "3031:8080"
     depends_on:
       - db-ardiartax
 
-# DEFINISI VOLUMES: Wajib ada agar data PostgreSQL Anda persisten (tidak hilang)
+  # 💡 SERVICE BARU: Otomatis Backup Database
+  backup-db-ardiartax:
+    image: prodrigestivill/postgres-backup-local:15
+    container_name: ardiartax_backup
+    restart: always
+    environment:
+      POSTGRES_HOST: db-ardiartax
+      POSTGRES_USER: ardiartax
+      POSTGRES_PASSWORD: bukankaumdajal666
+      POSTGRES_DB: ardiartax_db
+      # Penjadwalan: Eksekusi setiap hari jam 00:00 (Format Cron)
+      POSTGRES_EXTRA_OPTS: "-F c" # Format kompresi PostgreSQL custom (lebih hemat size)
+      SCHEDULE: "@daily" 
+      BACKUP_KEEP_DAYS: 7 # Menyimpan history backup selama 7 hari terakhir, selebihnya dihapus otomatis
+    volumes:
+      - ./database:/var/xray/postgres-backup # Hubungkan folder luar ./database ke penampungan backup kontainer
+    depends_on:
+      - db-ardiartax
+
 volumes:
   postgres_data:

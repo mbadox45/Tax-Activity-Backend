@@ -235,3 +235,101 @@ def unified_share_documents(
     except Exception as e:
         db.rollback()
         return error_response(message=str(e), code=500)
+
+
+@router.get("/{document_id}/detail")
+def get_document_detail_with_sharing(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        # 1. Ambil data dokumen utama beserta data User (owner) menggunakan Join
+        query_result = db.query(Document, User).\
+            join(User, Document.user_id == User.id).\
+            filter(Document.id == document_id).first()
+            
+        if not query_result:
+            return error_response(message="Dokumen tidak ditemukan", code=404)
+
+        # Pecah hasil tuple query
+        doc, owner = query_result
+
+        # 👑 Cek status Super Admin
+        is_super_admin = current_user.role == "super_admin"
+
+        # 2. Logika Otorisasi Dasar: Apakah user ini berhak melihat detail dokumen ini?
+        if not is_super_admin and doc.user_id != current_user.id and not doc.is_shared:
+            return error_response(message="Anda tidak memiliki akses ke dokumen ini", code=403)
+
+        # 3. Hitung Access Level untuk User yang sedang login saat ini
+        current_user_access_level = "viewer"  # Default fallback
+        
+        if doc.user_id == current_user.id or is_super_admin:
+            current_user_access_level = "editor"
+        else:
+            # Jika dokumen milik orang lain dan di-share, cek hak akses spesifik grup user ini
+            user_group_ids = [current_user.group_id] if current_user.group_id else []
+            
+            if user_group_ids:
+                specific_access = db.query(DocumentAccess).filter(
+                    DocumentAccess.document_id == doc.id,
+                    DocumentAccess.group_id.in_(user_group_ids)
+                ).first()
+                if specific_access:
+                    current_user_access_level = specific_access.access_level.value
+
+        # 4. Ambil Daftar Grup yang memiliki akses ke dokumen ini (Hanya jika is_shared = True)
+        shared_groups_list = []
+        
+        if doc.is_shared:
+            # Join dengan tabel Group untuk mengambil nama dan informasi grup secara lengkap
+            access_records = db.query(DocumentAccess, Group).\
+                join(Group, DocumentAccess.group_id == Group.id).\
+                filter(DocumentAccess.document_id == doc.id).all()
+                
+            for access, group in access_records:
+                shared_groups_list.append({
+                    "group_id": group.id,
+                    "group_name": group.name,
+                    "access_level": access.access_level.value  # 'viewer' atau 'editor'
+                })
+
+        # 5. Susun Payload Output Secara Mendetail
+        document_detail = {
+            "id": doc.id,
+            "name": doc.name,
+            "is_folder": doc.is_folder,
+            "file_path": doc.file_path,
+            "file_type": doc.file_type,
+            "file_size": doc.file_size,
+            "parent_id": doc.parent_id,
+            
+            # 👤 Informasi Pemilik Dokumen (Owner Info)
+            "owner_id": doc.user_id,
+            "owner_name": owner.name,  # 🔥 Penambahan Baru: Nama lengkap/username dari pemilik dokumen
+            
+            "created_at": doc.created_at.isoformat() if doc.created_at else None,
+            "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
+            
+            # 🔒 Status Sharing Konten
+            "is_shared": doc.is_shared,
+            "share_with_all": doc.share_with_all,
+            
+            # 👤 Hak Akses User yang sedang menembak API saat ini
+            "my_access_level": current_user_access_level,
+            
+            # 👥 Daftar Grup yang diberikan akses
+            "shared_groups": shared_groups_list
+        }
+
+        return success_response(
+            data=document_detail,
+            message="Detail dokumen dan informasi pemilik berhasil dimuat."
+        )
+
+    except Exception as e:
+        return error_response(
+            message=f"Terjadi kesalahan saat memuat detail dokumen: {str(e)}", 
+            code=500
+        )
