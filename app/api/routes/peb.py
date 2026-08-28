@@ -1,8 +1,11 @@
 # app/api/routes/peb.py
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Form
+import xml.etree.ElementTree as ET
+from xml.dom import minidom
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Form, Response
 from fastapi.responses import FileResponse # Tambah ini
 from sqlalchemy.orm import Session, joinedload
 from typing import List
+from datetime import datetime, date
 import uuid
 import os
 
@@ -247,6 +250,96 @@ async def view_peb_pdf(
         path=peb.file_path,
         filename=peb.file_name,
         media_type="application/pdf"
+    )
+
+
+def format_document_date(val) -> str:
+    if not val:
+        return ""
+    if isinstance(val, (datetime, date)):
+        return val.strftime("%Y-%m-%d")
+    
+    val_str = str(val).strip()
+    formats = ["%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y", "%d %B %Y"]
+    for fmt in formats:
+        try:
+            return datetime.strptime(val_str, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return val_str
+
+# =========================================
+# 🔹 EXPORT PEB TO XML (Format Coretax/e-Faktur)
+# =========================================
+@router.get("/export-xml")
+def export_peb_xml(
+    ids: str = None,  # Komma-separated: ?ids=1,2,3
+    masa_terbit: str = None,  # Filter per masa: ?masa_terbit=Mar 2026
+    tin_perusahaan: str = "0314973306111000",  # NPWP Perusahaan / Pengusaha
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 1. Query Data PEB
+    query = db.query(PEB).join(PEBTerbit)
+
+    if ids:
+        id_list = [int(i.strip()) for i in ids.split(",") if i.strip().isdigit()]
+        query = query.filter(PEB.id.in_(id_list))
+    elif masa_terbit:
+        query = query.filter(PEBTerbit.masa_terbit == masa_terbit)
+
+    pebs = query.options(joinedload(PEB.terbit)).all()
+
+    if not pebs:
+        return error_response("Tidak ada data PEB untuk diexport", 404)
+
+    # 2. Buat Struktur Root XML
+    root = ET.Element("SpecialDocBulk")
+    
+    tin_elem = ET.SubElement(root, "TIN")
+    tin_elem.text = tin_perusahaan
+
+    list_of_doc = ET.SubElement(root, "ListOfSpecialDoc")
+
+    # 3. Loop Data PEB ke XML Node
+    for p in pebs:
+        doc = ET.SubElement(list_of_doc, "SpecialDoc")
+
+        # Hitung DPP (TaxBase = FOB * Kurs)
+        tax_base = float(p.nilai_fob or 0) * float(p.nilai_tukar or 0)
+        
+        # Format angka jika pecahan .0 hindari eksponen
+        tax_base_str = f"{tax_base:.2f}".rstrip('0').rstrip('.') if tax_base % 1 != 0 else str(int(tax_base))
+
+        ET.SubElement(doc, "TransactionType").text = "02"
+        ET.SubElement(doc, "TransactionDetail").text = "11"
+        ET.SubElement(doc, "TransactionDocument").text = "4"
+        ET.SubElement(doc, "AdditionalInformation").text = ""
+        ET.SubElement(doc, "DocumentNumber").text = str(p.document_number or "")
+        ET.SubElement(doc, "DocumentDate").text = format_document_date(p.document_date)
+        ET.SubElement(doc, "Reference").text = ""
+        ET.SubElement(doc, "BuyerTIN").text = "0000000000000000"
+        ET.SubElement(doc, "BuyerName").text = str(p.buyer_name or "")
+        ET.SubElement(doc, "BuyerAddress").text = str(p.buyer_address or "")
+        ET.SubElement(doc, "TaxBase").text = tax_base_str
+        ET.SubElement(doc, "VAT").text = "0"
+        ET.SubElement(doc, "STLG").text = "0"
+
+    # 4. Convert XML Tree ke Format Pretty Printed String
+    xml_str = ET.tostring(root, encoding="utf-8")
+    parsed_xml = minidom.parseString(xml_str)
+    pretty_xml = parsed_xml.toprettyxml(indent="  ", encoding="utf-8")
+
+    # 5. Dynamic Filename
+    filename = f"PEB_Export_{masa_terbit.replace(' ', '_') if masa_terbit else 'selected'}.xml"
+
+    # 6. Return response sebagai file XML yang langsung terdownload
+    return Response(
+        content=pretty_xml,
+        media_type="application/xml",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
     )
 
 # =========================================
